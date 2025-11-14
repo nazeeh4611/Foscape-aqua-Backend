@@ -43,7 +43,6 @@ export const getSubCategoriesByCategory = async (req, res) => {
     }).populate('categoryId', 'name image description');
 
 
-    console.log(subcategories,"is heree")
     if (!subcategories || subcategories.length === 0) {
       return res.status(200).json({
         success: true,
@@ -206,9 +205,9 @@ export const getRelatedProducts = async (req, res) => {
     const { productId } = req.params;
     const { limit = 4 } = req.query;
 
-    const product = await product.findById(productId);
+    const products = await product.findById(productId);
 
-    if (!product) {
+    if (!products) {
       return res.status(404).json({
         success: false,
         message: 'Product not found',
@@ -216,7 +215,7 @@ export const getRelatedProducts = async (req, res) => {
     }
 
     const relatedProducts = await product.find({
-      subCategory: product.subCategory,
+      subCategory: products.subCategory,
       _id: { $ne: productId },
       status: 'Active',
     })

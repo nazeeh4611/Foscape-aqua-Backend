@@ -3,6 +3,8 @@ import path from "path";
 import dotenv from "dotenv";
 import {Userlogin,UserRegister,Logout, getUser, GoogleAuth, ResetPassword, ForgotPassword,VerifyOtp, ResendOtp} from "../Controller/AuthController.js"
 import { AllCategories, getSubCategoriesByCategory,getRelatedProducts,getFeaturedProducts,getProductByIdUser,getAllProductsUser,searchProducts, getCategoriesWithSubcategories } from "../Controller/UserController.js";
+import { getCart, addToCart, updateCartItem, removeFromCart, clearCart,getWishlist, addToWishlist, removeFromWishlist, clearWishlist } from '../Controller/CartController.js';
+import { authenticateUser } from "../Middleware/Auth.js";
 
 
 dotenv.config();
@@ -31,6 +33,21 @@ router.get('/product/:id', getProductByIdUser);
 router.get('/products/related/:productId', getRelatedProducts);
 router.get('/products/featured', getFeaturedProducts);
 router.get('/products/search', searchProducts);
+
+// cart controller
+router.get('/cart', authenticateUser, getCart);
+router.post('/cart/add', authenticateUser, addToCart);
+router.put('/cart/update', authenticateUser, updateCartItem);
+router.delete('/cart/remove/:productId', authenticateUser, removeFromCart);
+router.delete('/cart/clear', authenticateUser, clearCart);
+
+
+// wishlist controller
+router.get('/wishlist', authenticateUser, getWishlist);
+router.post('/wishlist/add', authenticateUser, addToWishlist);
+router.delete('/wishlist/remove/:productId', authenticateUser, removeFromWishlist);
+router.delete('/wishlist/clear', authenticateUser, clearWishlist);
+
 
 
 
