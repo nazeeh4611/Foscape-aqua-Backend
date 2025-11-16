@@ -6,6 +6,7 @@ import { AllCategories, getSubCategoriesByCategory,getRelatedProducts,getFeature
 import { getCart, addToCart, updateCartItem, removeFromCart, clearCart,getWishlist, addToWishlist, removeFromWishlist, clearWishlist } from '../Controller/CartController.js';
 import { createRazorpayOrder, verifyRazorpayPayment, createOrder, getUserOrders, getOrderById, cancelOrder } from '../Controller/OrderController.js';
 import { getUserProfile, updateUserProfile, changePassword } from '../Controller/UserProfileController.js';
+import { getAllGalleries, getGalleryById } from '../Controller/GalleryController.js';
 import { authenticateUser } from "../Middleware/Auth.js";
 
 dotenv.config();
@@ -53,5 +54,8 @@ router.put('/orders/:orderId/cancel', authenticateUser, cancelOrder);
 router.get('/profile', authenticateUser, getUserProfile);
 router.put('/profile/update', authenticateUser, updateUserProfile);
 router.put('/profile/change-password', authenticateUser, changePassword);
+
+router.get('/gallery', getAllGalleries);
+router.get('/gallery/:id', getGalleryById);
 
 export default router;

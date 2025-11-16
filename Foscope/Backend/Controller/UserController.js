@@ -4,11 +4,9 @@ import product from '../Model/ProductModel.js';
 
 export const AllCategories = async (req, res) => {
   try {
-    console.log("Fetching all categories...");
 
     const categories = await Category.find().sort({ createdAt: -1 });
 
-    console.log("Categories fetched successfully");
     return res.status(200).json({
       success: true,
       message: "Categories fetched successfully",
@@ -28,7 +26,6 @@ export const AllCategories = async (req, res) => {
 
 export const getSubCategoriesByCategory = async (req, res) => {
   try {
-    console.log("first")
     const { categoryId } = req.params;
 
     if (!categoryId) {

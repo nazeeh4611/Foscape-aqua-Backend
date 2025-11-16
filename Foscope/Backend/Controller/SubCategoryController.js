@@ -80,7 +80,6 @@ export const getSubCategoriesByCategory = async (req, res) => {
 export const createSubCategory = async (req, res) => {
   try {
     const { name, description, status, category } = req.body;
-    console.log(category,"l;;l")
 
     if (!name || !description || !category) {
       return res.status(400).json({ 
@@ -158,11 +157,9 @@ export const updateSubCategory = async (req, res) => {
         message: "SubCategory not found",
       });
     } 
-    console.log(subCategory)
 
     if (categoryId && categoryId !== subCategory.category.toString()) {
       const categoryExists = await Category.findById(categoryId);
-      console.log(categoryExists,"opoppoop")
       if (!categoryExists) {
         return res.status(404).json({
           success: false,
