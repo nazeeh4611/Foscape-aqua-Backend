@@ -242,8 +242,9 @@ export const getFeaturedProducts = async (req, res) => {
 
     const featuredProducts = await product.find({
       status: 'Active',
-      isFeatured: true,
+      featured: true, 
     })
+    
       .populate('category', 'name')
       .populate('subCategory', 'name')
       .limit(parseInt(limit))

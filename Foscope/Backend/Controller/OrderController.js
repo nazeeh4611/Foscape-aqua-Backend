@@ -3,6 +3,8 @@ import Cart from '../Model/CartModel.js';
 import Product from '../Model/ProductModel.js';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
+import sendEmail from "../Utils/SendMail.js";
+import UserModel from '../Model/UserModel.js';
 
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
@@ -147,6 +149,12 @@ export const createOrder = async (req, res) => {
       message: 'Order placed successfully',
       order: populatedOrder,
     });
+    const user = await UserModel.findById(userId);
+
+    const emailSubject = "Your Order Has Been Placed!";
+    const emailMessage = orderSuccessEmail(user, populatedOrder);
+
+await sendEmail(user.email, emailSubject, emailMessage);
   } catch (error) {
     console.error('Error creating order:', error);
     res.status(500).json({
@@ -250,6 +258,13 @@ export const cancelOrder = async (req, res) => {
       message: 'Order cancelled successfully',
       order,
     });
+    const user = await UserModel.findById(userId);
+
+    const emailSubject = "Your Order Has Been Cancelled";
+    const emailMessage = orderCancelledEmail(user, order);
+
+    await sendEmail(user.email, emailSubject, emailMessage);
+
   } catch (error) {
     console.error('Error cancelling order:', error);
     res.status(500).json({
@@ -259,3 +274,114 @@ export const cancelOrder = async (req, res) => {
     });
   }
 };
+
+
+const orderSuccessEmail = (user, order) => `
+<div style="
+  font-family: Arial, sans-serif;
+  max-width: 600px;
+  margin: 0 auto;
+  background: #F0FAF8;
+  padding: 30px;
+  border-radius: 16px;
+  border: 1px solid #e0f2ef;
+">
+
+  <!-- Header -->
+  <div style="
+    background: linear-gradient(to right, #144E8C, #78CDD1);
+    padding: 25px;
+    border-radius: 12px;
+    text-align: center;
+    color: white;
+  ">
+    <h2 style="margin: 0; font-size: 24px; font-weight: 700;">
+      Order Placed Successfully!
+    </h2>
+    <p style="color: #e8f7f5; margin-top: 6px; font-size: 14px;">
+      Thank you for shopping with Foscape
+    </p>
+  </div>
+
+  <!-- Body -->
+  <div style="padding: 25px; color: #333;">
+    <p style="font-size: 15px;">Hello <strong>${user.name}</strong>,</p>
+
+    <p style="font-size: 15px;">
+      Your order <strong>${order.orderNumber}</strong> has been placed successfully.
+    </p>
+
+    <!-- Order Summary -->
+    <div style="margin: 20px 0; padding: 20px; background: white; border-radius: 12px; box-shadow: 0 6px 14px rgba(20, 78, 140, 0.10);">
+      <h3 style="margin: 0 0 12px; color: #144E8C;">Order Summary</h3>
+      ${order.items
+        .map(
+          (item) => `
+        <div style="padding: 8px 0; border-bottom: 1px solid #eee;">
+          <strong>${item.name}</strong> × ${item.quantity}
+          <div style="font-size: 13px; color: #666;">₹${item.price}</div>
+        </div>`
+        )
+        .join("")}
+      <p style="margin-top: 15px; font-size: 16px;">
+        <strong>Total: ₹${order.totalAmount}</strong>
+      </p>
+    </div>
+
+    <p style="font-size: 14px; margin-top: 20px; color: #144E8C; font-weight: 600;">
+      Best regards,<br/>
+      <span style="color: #333; font-weight: 500;">Foscape Team</span>
+    </p>
+  </div>
+</div>
+`;
+
+
+const orderCancelledEmail = (user, order) => `
+<div style="
+  font-family: Arial, sans-serif;
+  max-width: 600px;
+  margin: 0 auto;
+  background: #F0FAF8;
+  padding: 30px;
+  border-radius: 16px;
+  border: 1px solid #e0f2ef;
+">
+
+  <!-- Header -->
+  <div style="
+    background: linear-gradient(to right, #144E8C, #78CDD1);
+    padding: 25px;
+    border-radius: 12px;
+    text-align: center;
+    color: white;
+  ">
+    <h2 style="margin: 0; font-size: 24px; font-weight: 700;">
+      Order Cancelled
+    </h2>
+    <p style="color: #e8f7f5; margin-top: 6px; font-size: 14px;">
+      Your order has been cancelled successfully
+    </p>
+  </div>
+
+  <div style="padding: 25px; color: #333;">
+    <p style="font-size: 15px;">Hello <strong>${user.name}</strong>,</p>
+
+    <p style="font-size: 15px;">
+      Your order <strong>${order.orderNumber}</strong> has been cancelled.
+    </p>
+
+    <p style="font-size: 15px; margin-top: 10px;">
+      <strong>Cancellation Reason:</strong><br>
+      ${order.cancelReason}
+    </p>
+
+    <div style="margin-top: 25px;">
+      <p style="font-size: 14px; color: #144E8C; font-weight: 600;">
+        Best regards,<br/>
+        <span style="color: #333; font-weight: 500;">Foscape Team</span>
+      </p>
+    </div>
+  </div>
+</div>
+`;

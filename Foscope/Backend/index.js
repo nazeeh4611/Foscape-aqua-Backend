@@ -16,7 +16,7 @@ const app = express();
 const PORT = 3001;
 
 const allowedOrigins = [
-    'https://www.foscape.com',
+    'https://www.thefoscape.com',
     'http://localhost:5173'
 ];
 

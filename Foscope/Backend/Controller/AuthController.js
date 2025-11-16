@@ -101,20 +101,79 @@ export const UserRegister = async (req, res) => {
     
     const emailSubject = "Email Verification OTP";
     const emailMessage = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: #144E8C; font-size: 20px; margin-bottom: 20px;">Welcome to ForScape!</h2>
-        <p style="font-size: 14px; color: #333;">Hello ${username},</p>
-        <p style="font-size: 14px; color: #333;">Thank you for registering. Your verification code is:</p>
-        <div style="text-align: center; margin: 30px 0;">
-          <div style="background-color: #f7f7f7; border: 2px solid #144E8C; padding: 20px; border-radius: 10px; display: inline-block;">
-            <span style="font-size: 32px; font-weight: bold; color: #144E8C; letter-spacing: 5px;">${otp}</span>
+    <div style="
+      font-family: Arial, sans-serif;
+      max-width: 600px;
+      margin: 0 auto;
+      background: #F0FAF8;
+      padding: 30px;
+      border-radius: 16px;
+      border: 1px solid #e0f2ef;
+    ">
+  
+      <!-- Header -->
+      <div style="
+        background: linear-gradient(to right, #144E8C, #78CDD1);
+        padding: 25px;
+        border-radius: 12px;
+        text-align: center;
+        color: white;
+      ">
+        <h2 style="margin: 0; font-size: 24px; font-weight: 700;">
+          Welcome to Foscape!
+        </h2>
+        <p style="color: #e8f7f5; font-size: 14px; margin-top: 8px;">
+          Your gateway to world-class aquatic care
+        </p>
+      </div>
+  
+      <!-- Body -->
+      <div style="padding: 25px; color: #333;">
+        <p style="font-size: 15px;">Hello <strong>${username}</strong>,</p>
+  
+        <p style="font-size: 15px;">
+          Thank you for registering with Foscape. Please use the verification code 
+          below to complete your signup:
+        </p>
+  
+        <!-- OTP Box -->
+        <div style="text-align: center; margin: 25px 0;">
+          <div style="
+            background: #ffffff;
+            border: 2px solid #144E8C;
+            border-radius: 14px;
+            padding: 22px 30px;
+            display: inline-block;
+            box-shadow: 0 6px 14px rgba(20, 78, 140, 0.15);
+          ">
+            <span style="
+              font-size: 36px;
+              font-weight: bold;
+              letter-spacing: 8px;
+              color: #144E8C;
+            ">
+              ${otp}
+            </span>
           </div>
         </div>
-        <p style="font-size: 14px; color: #333;">This code will expire in 10 minutes.</p>
-        <p style="font-size: 14px; color: #333;">If you didn't request this verification, please ignore this email.</p>
-        <p style="font-size: 14px; color: #333;">Best regards,<br>Foscape Team</p>
+  
+        <p style="font-size: 14px; color: #555;">
+          This code will expire in <strong>10 minutes</strong>.
+        </p>
+  
+        <p style="font-size: 14px; color: #555; margin-top: 14px;">
+          If you didn’t request this verification, you can safely ignore this email.
+        </p>
+  
+        <!-- Footer -->
+        <p style="font-size: 14px; margin-top: 25px; color: #144E8C; font-weight: 600;">
+          Best regards,<br/>
+          <span style="color: #333; font-weight: 500;">The Foscape Team</span>
+        </p>
       </div>
-    `;
+    </div>
+  `;
+  
     
     try {
       await sendEmail(email, emailSubject, emailMessage);
@@ -219,19 +278,74 @@ export const ResendOtp = async (req, res) => {
     
     const emailSubject = "Email Verification OTP - Resend";
     const emailMessage = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: #144E8C; font-size: 20px; margin-bottom: 20px;">Verification Code Resent</h2>
-        <p style="font-size: 14px; color: #333;">Hello ${user.name},</p>
-        <p style="font-size: 14px; color: #333;">Your new verification code is:</p>
-        <div style="text-align: center; margin: 30px 0;">
-          <div style="background-color: #f7f7f7; border: 2px solid #144E8C; padding: 20px; border-radius: 10px; display: inline-block;">
-            <span style="font-size: 32px; font-weight: bold; color: #144E8C; letter-spacing: 5px;">${otp}</span>
+    <div style="
+      font-family: Arial, sans-serif;
+      max-width: 600px;
+      margin: 0 auto;
+      background: #F0FAF8;
+      padding: 30px;
+      border-radius: 16px;
+      border: 1px solid #e0f2ef;
+    ">
+  
+      <!-- Header -->
+      <div style="
+        background: linear-gradient(to right, #144E8C, #78CDD1);
+        padding: 25px;
+        border-radius: 12px;
+        text-align: center;
+        color: white;
+      ">
+        <h2 style="margin: 0; font-size: 22px; font-weight: 700;">
+          Verification Code Resent
+        </h2>
+        <p style="color: #e8f7f5; margin-top: 6px; font-size: 14px;">
+          Your updated verification code is below
+        </p>
+      </div>
+  
+      <!-- Body -->
+      <div style="padding: 25px; color: #333;">
+        <p style="font-size: 15px;">Hello <strong>${user.name}</strong>,</p>
+  
+        <p style="font-size: 15px;">
+          Your new verification code has been generated. Please use the code below to continue:
+        </p>
+  
+        <!-- OTP Box -->
+        <div style="text-align: center; margin: 25px 0;">
+          <div style="
+            background: #ffffff;
+            border: 2px solid #144E8C;
+            padding: 22px 30px;
+            border-radius: 14px;
+            display: inline-block;
+            box-shadow: 0 6px 14px rgba(20, 78, 140, 0.15);
+          ">
+            <span style="
+              font-size: 36px;
+              font-weight: bold;
+              letter-spacing: 8px;
+              color: #144E8C;
+            ">
+              ${otp}
+            </span>
           </div>
         </div>
-        <p style="font-size: 14px; color: #333;">This code will expire in 10 minutes.</p>
-        <p style="font-size: 14px; color: #333;">Best regards,<br>Foscape Team</p>
+  
+        <p style="font-size: 14px; color: #555;">
+          This code will expire in <strong>10 minutes</strong>.
+        </p>
+  
+        <p style="font-size: 14px; margin-top: 25px; color: #144E8C; font-weight: 600;">
+          Best regards,<br/>
+          <span style="color: #333; font-weight: 500;">Foscape Team</span>
+        </p>
       </div>
-    `;
+    </div>
+  `;
+  
+  
     
     try {
       await sendEmail(email, emailSubject, emailMessage);
@@ -277,18 +391,76 @@ export const ForgotPassword = async (req, res) => {
 
     const emailSubject = "Password Reset Link";
     const emailMessage = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: #144E8C; font-size: 20px; margin-bottom: 20px;">Password Reset Request</h2>
-        <p style="font-size: 14px; color: #333;">Hello ${user.name},</p>
-        <p style="font-size: 14px; color: #333;">You requested to reset your password. Click the link below:</p>
-        <div style="text-align: center; margin: 30px 0;">
-          <a href="${resetLink}" style="background-color: #144E8C; color: white; padding: 12px 30px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: bold;">Reset Password</a>
-        </div>
-        <p style="font-size: 14px; color: #333;">This link will expire in 30 minutes.</p>
-        <p style="font-size: 14px; color: #333;">If you didn't request this, ignore this email.</p>
-        <p style="font-size: 14px; color: #333;">Best regards,<br>Foscape Team</p>
+    <div style="
+      font-family: Arial, sans-serif;
+      max-width: 600px;
+      margin: 0 auto;
+      background: #F0FAF8;
+      padding: 30px;
+      border-radius: 16px;
+      border: 1px solid #e0f2ef;
+    ">
+  
+      <!-- Header -->
+      <div style="
+        background: linear-gradient(to right, #144E8C, #78CDD1);
+        padding: 25px;
+        border-radius: 12px;
+        text-align: center;
+        color: white;
+      ">
+        <h2 style="margin: 0; font-size: 22px; font-weight: 700;">
+          Password Reset Request
+        </h2>
+        <p style="color: #e8f7f5; margin-top: 6px; font-size: 14px;">
+          Securely reset your password below
+        </p>
       </div>
-    `;
+  
+      <!-- Body -->
+      <div style="padding: 25px; color: #333;">
+        <p style="font-size: 15px;">Hello <strong>${user.name}</strong>,</p>
+  
+        <p style="font-size: 15px;">
+          We received a request to reset your password. Please click the button below to continue:
+        </p>
+  
+        <!-- Reset Button -->
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${resetLink}"
+            style="
+              background: linear-gradient(to right, #144E8C, #78CDD1);
+              color: white;
+              padding: 14px 32px;
+              font-size: 15px;
+              font-weight: bold;
+              border-radius: 10px;
+              text-decoration: none;
+              display: inline-block;
+              box-shadow: 0 6px 14px rgba(20, 78, 140, 0.15);
+            "
+          >
+            Reset Password
+          </a>
+        </div>
+  
+        <p style="font-size: 14px; color: #555;">
+          This link will expire in <strong>30 minutes</strong>.
+        </p>
+  
+        <p style="font-size: 14px; color: #555;">
+          If you didn’t request this reset, please ignore this message.
+        </p>
+  
+        <p style="font-size: 14px; margin-top: 25px; color: #144E8C; font-weight: 600;">
+          Best regards,<br/>
+          <span style="color: #333; font-weight: 500;">Foscape Team</span>
+        </p>
+      </div>
+    </div>
+  `;
+  
+  
 
     try {
       await sendEmail(email, emailSubject, emailMessage);

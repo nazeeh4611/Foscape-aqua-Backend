@@ -4,6 +4,7 @@ import multer from "multer";
 import multerS3 from "multer-s3";
 import { S3Client } from "@aws-sdk/client-s3";
 import { fromEnv } from "@aws-sdk/credential-provider-env";
+
 import {
   createCategory,
   deleteCategory,
@@ -11,55 +12,68 @@ import {
   toggleCategoryStatus,
   updateCategory,
 } from "../Controller/CategoryController.js";
-import { 
-  createSubCategory, 
-  deleteSubCategory, 
-  getAllSubCategories, 
-  getSubCategoriesByCategory, 
-  getSubCategoryById, 
-  toggleSubCategoryStatus, 
-  updateSubCategory 
+
+import {
+  createSubCategory,
+  deleteSubCategory,
+  getAllSubCategories,
+  getSubCategoriesByCategory,
+  getSubCategoryById,
+  toggleSubCategoryStatus,
+  updateSubCategory,
 } from "../Controller/SubCategoryController.js";
-import { 
-  createProduct, 
-  deleteProduct, 
-  getAllProducts, 
-  getCategories, 
-  getProductById, 
-  getSubCategories, 
-  toggleProductStatus, 
-  updateProduct 
+
+import {
+  createProduct,
+  deleteProduct,
+  getAllProducts,
+  getCategories,
+  getProductById,
+  getSubCategories,
+  toggleProductStatus,
+  updateProduct,
 } from "../Controller/ProductController.js";
-import { 
+
+import {
   addGalleryItem,
   deleteGalleryItem,
   deleteOrder,
-  deleteUser, 
-  getAllGallery, 
-  getAllOrders, 
-  getAllUsers, 
-  getOrderById, 
-  getOrderStats, 
-  getOrdersByUser, 
-  getUserById, 
-  searchOrders, 
-  toggleUserBlockStatus, 
-  updateGalleryItem, 
-  updateGalleryStatus, 
-  updateOrderStatus, 
-  updatePaymentStatus, 
-  updateUser 
+  deleteUser,
+  getAllGallery,
+  getAllOrders,
+  getAllUsers,
+  getOrderById,
+  getOrderStats,
+  getOrdersByUser,
+  getUserById,
+  searchOrders,
+  toggleUserBlockStatus,
+  updateGalleryItem,
+  updateGalleryStatus,
+  updateOrderStatus,
+  updatePaymentStatus,
+  updateUser,
 } from "../Controller/AdminController.js";
-import { downloadSalesReportExcel, downloadSalesReportPDF, getSalesReport } from "../Controller/SalesCaontroller.js";
+
+import {
+  downloadSalesReportExcel,
+  downloadSalesReportPDF,
+  getSalesReport,
+} from "../Controller/SalesController.js";
+
+import { adminLogin, changePassword } from "../Controller/AdminAuthController.js";
+import { authenticate, authorizeAdmin } from "../Middleware/Auth.js";
 
 
 dotenv.config();
 
 const Adminrouter = express.Router();
 
+/* ------------------------------ AWS CONFIG ------------------------------ */
+
 const required = (name) => {
   const v = process.env[name];
-  if (!v) throw new Error(`Missing required environment variable: ${name}`);
+  if (!v) throw new Error(`Missing required env variable: ${name}`);
   return v;
 };
 
@@ -74,27 +88,24 @@ const s3Client = new S3Client({
 });
 
 const isAllowedImage = (mimetype) =>
-  ["image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"].includes(
-    mimetype
-  );
+  ["image/jpeg", "image/png", "image/gif", "image/webp"].includes(mimetype);
+
+/* ------------------------------ MULTER UPLOADS ------------------------------ */
 
 const categoryUpload = multer({
   storage: multerS3({
     s3: s3Client,
     bucket: categoryBucket,
     contentType: multerS3.AUTO_CONTENT_TYPE,
-    metadata: (req, file, cb) => cb(null, { fieldName: file.fieldname }),
     key: (req, file, cb) => {
-      const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-      const safeName = file.originalname.replace(/\s+/g, "-");
-      cb(null, `category-${unique}-${safeName}`);
+      const unique = `${Date.now()}-${Math.random().toString(36).substring(2)}`;
+      cb(null, `category-${unique}-${file.originalname.replace(/\s+/g, "-")}`);
     },
   }),
-  limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) =>
     isAllowedImage(file.mimetype)
       ? cb(null, true)
-      : cb(new Error("Only JPEG/PNG/GIF/WebP images are allowed")),
+      : cb(new Error("Only valid image formats allowed")),
 });
 
 const propertyUpload = multer({
@@ -102,77 +113,77 @@ const propertyUpload = multer({
     s3: s3Client,
     bucket: propertyBucket,
     contentType: multerS3.AUTO_CONTENT_TYPE,
-    metadata: (req, file, cb) => cb(null, { fieldName: file.fieldname }),
     key: (req, file, cb) => {
-      const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-      const safeName = file.originalname.replace(/\s+/g, "-");
-      cb(null, `property-${unique}-${safeName}`);
+      const unique = `${Date.now()}-${Math.random().toString(36).substring(2)}`;
+      cb(null, `property-${unique}-${file.originalname.replace(/\s+/g, "-")}`);
     },
   }),
-  limits: {
-    files: 10,
-    fileSize: 20 * 1024 * 1024,
-    fieldSize: 25 * 1024 * 1024,
-  },
+  limits: { files: 10 },
   fileFilter: (req, file, cb) =>
     isAllowedImage(file.mimetype)
       ? cb(null, true)
-      : cb(new Error("Only JPEG/PNG/GIF/WebP images are allowed")),
+      : cb(new Error("Invalid image type")),
 });
 
-// Updated gallery upload configuration with support for both images and thumbnail
 const galleryUpload = multer({
   storage: multerS3({
     s3: s3Client,
     bucket: galleryBucket,
     contentType: multerS3.AUTO_CONTENT_TYPE,
-    metadata: (req, file, cb) => cb(null, { fieldName: file.fieldname }),
     key: (req, file, cb) => {
-      const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-      const safeName = file.originalname.replace(/\s+/g, "-");
-      const prefix = file.fieldname === 'thumbnail' ? 'thumbnail' : 'gallery';
-      cb(null, `${prefix}-${unique}-${safeName}`);
+      const unique = `${Date.now()}-${Math.random().toString(36).substring(2)}`;
+      const prefix = file.fieldname === "thumbnail" ? "thumbnail" : "gallery";
+      cb(null, `${prefix}-${unique}-${file.originalname.replace(/\s+/g, "-")}`);
     },
   }),
-  limits: {
-    files: 4, // 3 images + 1 thumbnail
-    fileSize: 5 * 1024 * 1024,
-  },
   fileFilter: (req, file, cb) =>
     isAllowedImage(file.mimetype)
       ? cb(null, true)
-      : cb(new Error("Only JPEG/PNG/GIF/WebP images are allowed")),
+      : cb(new Error("Invalid image type")),
 });
 
+/* ------------------------------ AUTH ROUTE ------------------------------ */
+
+// PUBLIC — Admin Login
+Adminrouter.post("/login", adminLogin);
+
+/* ------------------------------ PROTECTED ROUTES ------------------------------ */
+Adminrouter.use(authenticate, authorizeAdmin);
+
+/* ---------------------- CATEGORY ---------------------- */
 Adminrouter.get("/categories", getAllCategories);
 Adminrouter.post("/add-category", categoryUpload.single("image"), createCategory);
 Adminrouter.put("/edit-category/:id", categoryUpload.single("image"), updateCategory);
 Adminrouter.delete("/delete-category/:id", deleteCategory);
 Adminrouter.put("/categories/:id/status", toggleCategoryStatus);
 
-Adminrouter.get('/subcategories', getAllSubCategories);
-Adminrouter.get('/subcategories/:id', getSubCategoryById);
-Adminrouter.get('/subcategories/category/:categoryId', getSubCategoriesByCategory);
-Adminrouter.post('/add-subcategory', categoryUpload.single('image'), createSubCategory);
-Adminrouter.put('/edit-subcategory/:id', categoryUpload.single('image'), updateSubCategory);
-Adminrouter.delete('/delete-subcategory/:id', deleteSubCategory);
-Adminrouter.put('/subcategories/:id/status', toggleSubCategoryStatus);
+/* ---------------------- SUB CATEGORY ---------------------- */
+Adminrouter.get("/subcategories", getAllSubCategories);
+Adminrouter.get("/subcategories/:id", getSubCategoryById);
+Adminrouter.get("/subcategories/category/:categoryId", getSubCategoriesByCategory);
+Adminrouter.post("/add-subcategory", categoryUpload.single("image"), createSubCategory);
+Adminrouter.put("/edit-subcategory/:id", categoryUpload.single("image"), updateSubCategory);
+Adminrouter.delete("/delete-subcategory/:id", deleteSubCategory);
+Adminrouter.put("/subcategories/:id/status", toggleSubCategoryStatus);
 
+/* ---------------------- PRODUCTS ---------------------- */
 Adminrouter.get("/products", getAllProducts);
 Adminrouter.post("/add-product", propertyUpload.array("images", 10), createProduct);
 Adminrouter.get("/products/:id", getProductById);
 Adminrouter.put("/edit-product/:id", propertyUpload.array("images", 10), updateProduct);
 Adminrouter.delete("/products/:id", deleteProduct);
 Adminrouter.put("/products/:id/toggle-status", toggleProductStatus);
-Adminrouter.get("/categories", getCategories);
-Adminrouter.get('/subcategory/:categoryId', getSubCategories);
+Adminrouter.get("/categories-list", getCategories);
+Adminrouter.get("/subcategory/:categoryId", getSubCategories);
 
+/* ---------------------- USERS ---------------------- */
 Adminrouter.get("/users", getAllUsers);
 Adminrouter.get("/users/:id", getUserById);
 Adminrouter.delete("/users/:id", deleteUser);
 Adminrouter.put("/users/:id/toggle-block", toggleUserBlockStatus);
 Adminrouter.put("/users/:id", updateUser);
 
+/* ---------------------- ORDERS ---------------------- */
 Adminrouter.get("/orders", getAllOrders);
 Adminrouter.get("/orders/stats", getOrderStats);
 Adminrouter.get("/orders/search", searchOrders);
@@ -182,23 +193,31 @@ Adminrouter.put("/orders/:id/status", updateOrderStatus);
 Adminrouter.put("/orders/:id/payment-status", updatePaymentStatus);
 Adminrouter.delete("/orders/:id", deleteOrder);
 
-// Updated gallery routes with fields for both images and thumbnail
-Adminrouter.get('/gallery', getAllGallery);
-Adminrouter.post('/add-gallery', galleryUpload.fields([
-  { name: 'images', maxCount: 3 },
-  { name: 'thumbnail', maxCount: 1 }
-]), addGalleryItem);
-Adminrouter.put('/edit-gallery/:id', galleryUpload.fields([
-  { name: 'images', maxCount: 3 },
-  { name: 'thumbnail', maxCount: 1 }
-]), updateGalleryItem);
-Adminrouter.delete('/delete-gallery/:id', deleteGalleryItem);
-Adminrouter.put('/gallery/:id/status', updateGalleryStatus);
+/* ---------------------- GALLERY ---------------------- */
+Adminrouter.get("/gallery", getAllGallery);
+Adminrouter.post(
+  "/add-gallery",
+  galleryUpload.fields([
+    { name: "images", maxCount: 3 },
+    { name: "thumbnail", maxCount: 1 },
+  ]),
+  addGalleryItem
+);
+Adminrouter.put(
+  "/edit-gallery/:id",
+  galleryUpload.fields([
+    { name: "images", maxCount: 3 },
+    { name: "thumbnail", maxCount: 1 },
+  ]),
+  updateGalleryItem
+);
+Adminrouter.delete("/delete-gallery/:id", deleteGalleryItem);
+Adminrouter.put("/gallery/:id/status", updateGalleryStatus);
 
-
-
-Adminrouter.get('/sales-report', getSalesReport);
-Adminrouter.get('/sales-report/download-pdf', downloadSalesReportPDF);
-Adminrouter.get('/sales-report/download-excel', downloadSalesReportExcel);
+/* ---------------------- SALES REPORTS ---------------------- */
+Adminrouter.get("/sales-report", getSalesReport);
+Adminrouter.get("/sales-report/download-pdf", downloadSalesReportPDF);
+Adminrouter.get("/sales-report/download-excel", downloadSalesReportExcel);
+Adminrouter.put('/admin/change-password',changePassword);
 
 export default Adminrouter;

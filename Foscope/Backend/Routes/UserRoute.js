@@ -27,11 +27,12 @@ router.get('/category', AllCategories);
 router.get('/subcategory/:categoryId', getSubCategoriesByCategory);
 router.get('/categories-with-subcategories', getCategoriesWithSubcategories);
 
-router.get('/products/:subCategoryId', getAllProductsUser);
+router.get('/products/featured', getFeaturedProducts); // static
+router.get('/products/related/:productId', getRelatedProducts); // static
+router.get('/products/search', searchProducts); // static
+router.get('/products/:subCategoryId', getAllProductsUser); // dynamic
 router.get('/product/:id', getProductByIdUser);
-router.get('/products/related/:productId', getRelatedProducts);
-router.get('/products/featured', getFeaturedProducts);
-router.get('/products/search', searchProducts);
+
 
 router.get('/cart', authenticateUser, getCart);
 router.post('/cart/add', authenticateUser, addToCart);
