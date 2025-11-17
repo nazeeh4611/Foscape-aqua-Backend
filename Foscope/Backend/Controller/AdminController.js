@@ -2,6 +2,7 @@ import User from "../Model/UserModel.js";
 import Order from '../Model/OrderModel.js';
 import Product from '../Model/ProductModel.js';
 import Gallery from '../Model/GalleryModel.js';
+import sendEmail from "../Utils/SendMail.js";
 
 
 export const getAllUsers = async (req, res) => {
@@ -132,7 +133,7 @@ export const updateOrderStatus = async (req, res) => {
   try {
     console.log("first")
     const { id } = req.params;
-    console.log("first",id)
+    console.log("first", id)
 
     const { status, note } = req.body;
 
@@ -145,7 +146,7 @@ export const updateOrderStatus = async (req, res) => {
       });
     }
 
-    const order = await Order.findById(id);
+    const order = await Order.findById(id).populate('user');
 
     if (!order) {
       return res.status(404).json({
@@ -153,6 +154,9 @@ export const updateOrderStatus = async (req, res) => {
         message: 'Order not found'
       });
     }
+
+    // Store previous status to check if changing to Cancelled
+    const previousStatus = order.orderStatus;
 
     // Update order status
     order.orderStatus = status;
@@ -169,9 +173,29 @@ export const updateOrderStatus = async (req, res) => {
       order.deliveryDate = new Date();
     }
 
-    // If cancelled, can add cancel reason from note
-    if (status === 'Cancelled' && note) {
-      order.cancelReason = note;
+    // If cancelled by admin, restore stock and send email
+    if (status === 'Cancelled') {
+      order.cancelReason = note || 'Cancelled by admin';
+      
+      // Restore product stock
+      for (const item of order.items) {
+        await Product.findByIdAndUpdate(item.product, {
+          $inc: { stock: item.quantity },
+        });
+      }
+
+      // Send cancellation email to user
+      try {
+        const user = order.user; // Already populated
+        const emailSubject = "Your Order Has Been Cancelled";
+        const emailMessage = adminOrderCancelledEmail(user, order, note);
+        
+        await sendEmail(user.email, emailSubject, emailMessage);
+        console.log(`Cancellation email sent to ${user.email}`);
+      } catch (emailError) {
+        console.error('Error sending cancellation email:', emailError);
+        // Continue even if email fails
+      }
     }
 
     await order.save();
@@ -183,7 +207,9 @@ export const updateOrderStatus = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'Order status updated successfully',
+      message: status === 'Cancelled' 
+        ? 'Order cancelled successfully and customer notified via email'
+        : 'Order status updated successfully',
       order: updatedOrder
     });
   } catch (error) {
@@ -580,3 +606,116 @@ export const updateGalleryStatus = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
+
+const adminOrderCancelledEmail = (user, order, note) => `
+<div style="
+  font-family: Arial, sans-serif;
+  max-width: 600px;
+  margin: 0 auto;
+  background: #F0FAF8;
+  padding: 30px;
+  border-radius: 16px;
+  border: 1px solid #e0f2ef;
+">
+
+  <!-- Header -->
+  <div style="
+    background: linear-gradient(to right, #144E8C, #78CDD1);
+    padding: 25px;
+    border-radius: 12px;
+    text-align: center;
+    color: white;
+  ">
+    <h2 style="margin: 0; font-size: 24px; font-weight: 700;">
+      Order Cancelled
+    </h2>
+    <p style="color: #e8f7f5; margin-top: 6px; font-size: 14px;">
+      We're sorry, your order has been cancelled
+    </p>
+  </div>
+
+  <!-- Body -->
+  <div style="padding: 25px; color: #333;">
+    <p style="font-size: 15px;">Hello <strong>${user.name}</strong>,</p>
+
+    <p style="font-size: 15px;">
+      We regret to inform you that your order <strong>${order.orderNumber}</strong> has been cancelled.
+    </p>
+
+    ${note ? `
+    <div style="
+      margin: 20px 0;
+      padding: 15px;
+      background: #fff3cd;
+      border-left: 4px solid #ffc107;
+      border-radius: 8px;
+    ">
+      <p style="margin: 0; font-size: 14px;">
+        <strong>Cancellation Reason:</strong><br>
+        ${note}
+      </p>
+    </div>
+    ` : ''}
+
+    <!-- Order Details -->
+    <div style="
+      margin: 20px 0;
+      padding: 20px;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 6px 14px rgba(20, 78, 140, 0.10);
+    ">
+      <h3 style="margin: 0 0 12px; color: #144E8C;">Cancelled Order Details</h3>
+      ${order.items
+        .map(
+          (item) => `
+        <div style="padding: 8px 0; border-bottom: 1px solid #eee;">
+          <strong>${item.name}</strong> × ${item.quantity}
+          <div style="font-size: 13px; color: #666;">₹${item.price}</div>
+        </div>`
+        )
+        .join("")}
+      <p style="margin-top: 15px; font-size: 16px;">
+        <strong>Order Total: ₹${order.totalAmount}</strong>
+      </p>
+    </div>
+
+    ${order.paymentStatus === 'Paid' ? `
+    <div style="
+      margin: 20px 0;
+      padding: 15px;
+      background: #d1ecf1;
+      border-left: 4px solid #0c5460;
+      border-radius: 8px;
+    ">
+      <p style="margin: 0; font-size: 14px;">
+        <strong>Refund Information:</strong><br>
+        Your refund will be processed within 5-7 business days to your original payment method.
+      </p>
+    </div>
+    ` : ''}
+
+    <p style="font-size: 14px; margin-top: 20px;">
+      If you have any questions or concerns about this cancellation, please don't hesitate to contact our customer support team.
+    </p>
+
+    <p style="font-size: 14px; margin-top: 20px; color: #144E8C; font-weight: 600;">
+      Best regards,<br/>
+      <span style="color: #333; font-weight: 500;">Foscape Team</span>
+    </p>
+  </div>
+
+  <!-- Footer -->
+  <div style="
+    padding: 20px;
+    text-align: center;
+    border-top: 1px solid #e0f2ef;
+    color: #666;
+    font-size: 12px;
+  ">
+    <p style="margin: 5px 0;">Need help? Contact us at info@thefoscape.com</p>
+    <p style="margin: 5px 0;">Phone: +91-854 748 3891</p>
+  </div>
+</div>
+`;
