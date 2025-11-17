@@ -4,7 +4,7 @@ import dotenv from "dotenv";
 import {Userlogin,UserRegister,Logout, getUser, GoogleAuth, ResetPassword, ForgotPassword,VerifyOtp, ResendOtp} from "../Controller/AuthController.js"
 import { AllCategories, getSubCategoriesByCategory,getRelatedProducts,getFeaturedProducts,getProductByIdUser,getAllProductsUser,searchProducts, getCategoriesWithSubcategories } from "../Controller/UserController.js";
 import { getCart, addToCart, updateCartItem, removeFromCart, clearCart,getWishlist, addToWishlist, removeFromWishlist, clearWishlist } from '../Controller/CartController.js';
-import { createRazorpayOrder, verifyRazorpayPayment, createOrder, getUserOrders, getOrderById, cancelOrder } from '../Controller/OrderController.js';
+import { createRazorpayOrder, verifyRazorpayPayment, createOrder, getUserOrders, getOrderById, cancelOrder, generateInvoice } from '../Controller/OrderController.js';
 import { getUserProfile, updateUserProfile, changePassword } from '../Controller/UserProfileController.js';
 import { getAllGalleries, getGalleryById } from '../Controller/GalleryController.js';
 import { authenticateUser } from "../Middleware/Auth.js";
@@ -51,6 +51,8 @@ router.post('/orders/create', authenticateUser, createOrder);
 router.get('/orders', authenticateUser, getUserOrders);
 router.get('/orders/:orderId', authenticateUser, getOrderById);
 router.put('/orders/:orderId/cancel', authenticateUser, cancelOrder);
+router.get("/orders/:orderId/generate-invoice", generateInvoice);
+
 
 router.get('/profile', authenticateUser, getUserProfile);
 router.put('/profile/update', authenticateUser, updateUserProfile);

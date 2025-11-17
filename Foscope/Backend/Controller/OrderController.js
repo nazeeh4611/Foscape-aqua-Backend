@@ -5,6 +5,8 @@ import Razorpay from 'razorpay';
 import crypto from 'crypto';
 import sendEmail from "../Utils/SendMail.js";
 import UserModel from '../Model/UserModel.js';
+import PDFDocument from "pdfkit";
+
 console.log(process.env.RAZORPAY_KEY_ID,process.env.RAZORPAY_KEY_SECRET)
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
@@ -385,3 +387,158 @@ const orderCancelledEmail = (user, order) => `
   </div>
 </div>
 `;
+
+
+
+
+export const generateInvoice = async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.orderId);
+
+    if (!order) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    if (order.orderStatus !== "Delivered") {
+      return res
+        .status(400)
+        .json({ message: "Invoice only available for delivered orders" });
+    }
+
+    const doc = new PDFDocument({ margin: 50 });
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename=invoice-${order.orderNumber}.pdf`
+    );
+
+    doc.pipe(res);
+
+    doc.fontSize(20).text("INVOICE", { align: "right" });
+    doc.fontSize(10).text(`Order #${order.orderNumber}`, { align: "right" });
+    doc.moveDown();
+
+    doc.fontSize(12).text("FOSCAPE", 50, 50);
+    doc.fontSize(10).text("4/46B, Juma Masjid, PV Building", 50, 70);
+    doc.text("V Hamza Road, Near Naduvilangadi", 50, 85);
+    doc.text("Tirur, Kerala 676107", 50, 100);
+    doc.text("Phone: +91-854 748 3891", 50, 115);
+    doc.text("Email: info@thefoscape.com", 50, 130);
+
+    doc.moveTo(50, 160).lineTo(550, 160).stroke();
+
+    // Bill To
+    doc.fontSize(12).text("Bill To:", 50, 180);
+    doc.fontSize(10).text(order.shippingAddress.fullName, 50, 200);
+    doc.text(order.shippingAddress.phone, 50, 215);
+    doc.text(order.shippingAddress.addressLine1, 50, 230);
+
+    if (order.shippingAddress.addressLine2) {
+      doc.text(order.shippingAddress.addressLine2, 50, 245);
+      doc.text(
+        `${order.shippingAddress.city}, ${order.shippingAddress.state} - ${order.shippingAddress.pincode}`,
+        50,
+        260
+      );
+    } else {
+      doc.text(
+        `${order.shippingAddress.city}, ${order.shippingAddress.state} - ${order.shippingAddress.pincode}`,
+        50,
+        245
+      );
+    }
+
+    const invoiceY = 180;
+    doc.fontSize(12).text("Invoice Details:", 350, invoiceY);
+    doc
+      .fontSize(10)
+      .text(
+        `Order Date: ${new Date(order.createdAt).toLocaleDateString("en-IN")}`,
+        350,
+        invoiceY + 20
+      );
+
+    doc.text(
+      `Invoice Date: ${new Date().toLocaleDateString("en-IN")}`,
+      350,
+      invoiceY + 35
+    );
+    doc.text(`Status: ${order.orderStatus}`, 350, invoiceY + 50);
+
+    if (order.paymentDetails?.razorpayPaymentId) {
+      doc.text(
+        `Transaction ID: ${order.paymentDetails.razorpayPaymentId}`,
+        350,
+        invoiceY + 65
+      );
+    }
+
+    // Table
+    const tableTop = 320;
+    doc.moveTo(50, tableTop).lineTo(550, tableTop).stroke();
+
+    doc.fontSize(10).text("Item", 50, tableTop + 10);
+    doc.text("Quantity", 300, tableTop + 10, { width: 80, align: "center" });
+    doc.text("Price", 380, tableTop + 10, { width: 80, align: "right" });
+    doc.text("Amount", 460, tableTop + 10, { width: 90, align: "right" });
+
+    doc.moveTo(50, tableTop + 30).lineTo(550, tableTop + 30).stroke();
+
+    let yPosition = tableTop + 40;
+
+    order.items.forEach((item) => {
+      doc.text(item.name, 50, yPosition, { width: 240 });
+      doc.text(item.quantity.toString(), 300, yPosition, {
+        width: 80,
+        align: "center",
+      });
+      doc.text(`₹${item.price}`, 380, yPosition, { width: 80, align: "right" });
+      doc.text(`₹${item.price * item.quantity}`, 460, yPosition, {
+        width: 90,
+        align: "right",
+      });
+      yPosition += 30;
+    });
+
+    doc.moveTo(50, yPosition).lineTo(550, yPosition).stroke();
+
+    // Totals
+    yPosition += 20;
+    doc.text("Subtotal:", 380, yPosition, { width: 80, align: "right" });
+    doc.text(`₹${order.totalAmount}`, 460, yPosition, {
+      width: 90,
+      align: "right",
+    });
+
+    yPosition += 20;
+    doc.text("Delivery:", 380, yPosition, { width: 80, align: "right" });
+    doc
+      .fillColor("#16a34a")
+      .text("FREE", 460, yPosition, { width: 90, align: "right" })
+      .fillColor("#000");
+
+    yPosition += 20;
+    doc.moveTo(380, yPosition).lineTo(550, yPosition).stroke();
+
+    yPosition += 10;
+    doc.fontSize(12).text("Total:", 380, yPosition, {
+      width: 80,
+      align: "right",
+    });
+    doc.text(`₹${order.totalAmount}`, 460, yPosition, {
+      width: 90,
+      align: "right",
+    });
+
+    doc.fontSize(8).text("Thank you for your business!", 50, 700, {
+      align: "center",
+      width: 500,
+    });
+
+    doc.end();
+  } catch (error) {
+    console.error("Error generating invoice:", error);
+    res.status(500).json({ message: "Error generating invoice" });
+  }
+};
