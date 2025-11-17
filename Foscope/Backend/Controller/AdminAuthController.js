@@ -56,11 +56,11 @@ export const adminLogin = async (req, res) => {
 export const changePassword = async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
-    const adminId = req.admin.id;
-
+    const adminId = req.user.id;
     if (!currentPassword || !newPassword) {
       return res.status(400).json({ message: "All fields are required" });
     }
+
 
     const admin = await Admin.findById(adminId);
     if (!admin) {
@@ -85,3 +85,25 @@ export const changePassword = async (req, res) => {
     return res.status(500).json({ message: err.message });
   }
 };
+
+
+export const getAdminDetails = async (req, res) => {
+  try {
+    const adminId = req.user.id;   
+   
+
+    const admin = await Admin.findById(adminId).select("-password");
+
+    if (!admin)
+      return res.status(404).json({ success: false, message: "Admin not found" });
+
+    return res.status(200).json({
+      success: true,
+      admin
+    });
+
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+

@@ -61,7 +61,7 @@ import {
   getSalesReport,
 } from "../Controller/SalesController.js";
 
-import { adminLogin, changePassword } from "../Controller/AdminAuthController.js";
+import { adminLogin, changePassword, getAdminDetails } from "../Controller/AdminAuthController.js";
 import { authenticate, authorizeAdmin } from "../Middleware/Auth.js";
 
 
@@ -218,6 +218,7 @@ Adminrouter.put("/gallery/:id/status", updateGalleryStatus);
 Adminrouter.get("/sales-report", getSalesReport);
 Adminrouter.get("/sales-report/download-pdf", downloadSalesReportPDF);
 Adminrouter.get("/sales-report/download-excel", downloadSalesReportExcel);
-Adminrouter.put('/admin/change-password',changePassword);
+Adminrouter.put('/change-password',changePassword);
+Adminrouter.get("/me", getAdminDetails);
 
 export default Adminrouter;

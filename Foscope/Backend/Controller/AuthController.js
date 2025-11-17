@@ -5,6 +5,8 @@ import PasswordResetModel from "../Model/PassReset.js";
 import sendEmail from "../Utils/SendMail.js";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
+import { OAuth2Client } from "google-auth-library";
+
 
 export const Userlogin = async (req, res) => {
   try {
@@ -19,6 +21,7 @@ export const Userlogin = async (req, res) => {
     if (!user) {
       return res.status(409).json({ message: "This user doesn't exist" });
     }
+
 
     if (!user.isVerified) {
       return res.status(403).json({ message: "Please verify your email first" });
@@ -46,7 +49,7 @@ export const Userlogin = async (req, res) => {
     return res.status(200).json({
       message: "Successfully logged in",
       user: userResponse,
-      token,
+      token, 
       success: true,
     });
   } catch (error) {
@@ -54,6 +57,7 @@ export const Userlogin = async (req, res) => {
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
+
 
 
 export const UserRegister = async (req, res) => {
@@ -237,7 +241,7 @@ export const VerifyOtp = async (req, res) => {
     return res.status(200).json({
       message: "OTP verified, registration successful",
       user: userResponse,
-      token,
+      token, 
       success: true,
     });
   } catch (error) {
@@ -523,11 +527,6 @@ export const ResetPassword = async (req, res) => {
 
 export const Logout = async (req, res) => {
   try {
-    res.clearCookie("token", {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict"
-    });
 
     return res.status(200).json({ message: "Logged out successfully", success: true });
   } catch (error) {
@@ -559,26 +558,78 @@ export const getUser = async (req, res) => {
   }
 };
 
+
+const client = new OAuth2Client("418114033455-nu2odpsacsi4vb0sjrgsoebqcpfb9ai9.apps.googleusercontent.com");
+
+
 export const GoogleAuth = async (req, res) => {
   try {
     const { credential } = req.body;
+
+    console.log("=== GOOGLE AUTH DEBUG ===");
+    console.log("Backend Client ID:", process.env.GOOGLE_CLIENT_ID);
+    console.log("Credential length:", credential?.length);
+    console.log("Credential first 50 chars:", credential?.substring(0, 50));
 
     if (!credential) {
       return res.status(400).json({ message: "Credential is required" });
     }
 
-    const decoded = jwt.decode(credential);
-    const { email, name, picture } = decoded;
+    // Create a new OAuth2Client instance for each request
 
+    // Verify Google ID Token with more options
+    const ticket = await client.verifyIdToken({
+      idToken: credential,
+      audience: process.env.GOOGLE_CLIENT_ID,
+      // Add these for better validation
+      clockTolerance: 10, // 10 seconds tolerance
+    });
+
+    const payload = ticket.getPayload();
+    
+    console.log("=== TOKEN PAYLOAD ===");
+    console.log("Audience:", payload.aud);
+    console.log("Issuer:", payload.iss);
+    console.log("Email:", payload.email);
+    console.log("Email verified:", payload.email_verified);
+    console.log("Issued at:", new Date(payload.iat * 1000));
+    console.log("Expires at:", new Date(payload.exp * 1000));
+
+    // Validate issuer more specifically
+    const validIssuers = [
+      'accounts.google.com', 
+      'https://accounts.google.com'
+    ];
+    
+    if (!validIssuers.includes(payload.iss)) {
+      throw new Error(`Invalid issuer: ${payload.iss}`);
+    }
+
+    // Check if audience matches
+    if (payload.aud !== process.env.GOOGLE_CLIENT_ID) {
+      throw new Error(`Audience mismatch. Expected: ${process.env.GOOGLE_CLIENT_ID}, Got: ${payload.aud}`);
+    }
+
+    const { email, name, picture } = payload;
+
+    if (!email) {
+      return res.status(400).json({ message: "Invalid Google token - no email" });
+    }
+
+    // Continue with your existing user logic...
     let user = await UserModel.findOne({ email });
 
     if (!user) {
       user = new UserModel({
         name,
         email,
-        password: await bcrypt.hash(crypto.randomBytes(16).toString("hex"), 10),
+        picture,
+        password: await bcrypt.hash(
+          crypto.randomBytes(16).toString("hex"),
+          10
+        ),
         isVerified: true,
-        isBlocked: false
+        isBlocked: false,
       });
       await user.save();
     }
@@ -587,30 +638,39 @@ export const GoogleAuth = async (req, res) => {
       return res.status(403).json({ message: "Your account has been blocked" });
     }
 
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "30d" });
-
-    res.cookie("token", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      maxAge: 30 * 24 * 60 * 60 * 1000
-    });
+    const token = jwt.sign(
+      { id: user._id, email: user.email },
+      process.env.JWT_SECRET,
+      { expiresIn: "30d" }
+    );
 
     const userResponse = {
       _id: user._id,
       name: user.name,
       email: user.email,
       mobile: user.mobile,
+      picture: user.picture,
     };
 
+    console.log("=== SUCCESS ===");
     return res.status(200).json({
+      success: true,
       message: "Google authentication successful",
       user: userResponse,
       token,
-      success: true,
     });
+
   } catch (error) {
-    console.error("Google auth error:", error);
-    res.status(500).json({ message: "Server error", error: error.message });
+    console.error("=== GOOGLE AUTH ERROR ===");
+    console.error("Error name:", error.name);
+    console.error("Error message:", error.message);
+    console.error("Error stack:", error.stack);
+    
+    return res.status(400).json({
+      success: false,
+      message: "Google authentication failed",
+      error: error.message,
+      clientIdUsed: process.env.GOOGLE_CLIENT_ID
+    });
   }
 };

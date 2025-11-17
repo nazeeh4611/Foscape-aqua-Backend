@@ -8,6 +8,7 @@ import { createRazorpayOrder, verifyRazorpayPayment, createOrder, getUserOrders,
 import { getUserProfile, updateUserProfile, changePassword } from '../Controller/UserProfileController.js';
 import { getAllGalleries, getGalleryById } from '../Controller/GalleryController.js';
 import { authenticateUser } from "../Middleware/Auth.js";
+import { contactForm } from "../Controller/ContactController.js";
 
 dotenv.config();
 
@@ -21,18 +22,17 @@ router.post("/forgot-password", ForgotPassword);
 router.post("/reset-password", ResetPassword);
 router.post("/logout", Logout);
 router.post("/google-auth", GoogleAuth);
-router.get("/getuser", getUser);
+router.get("/get-user", getUser);
 
 router.get('/category', AllCategories);
 router.get('/subcategory/:categoryId', getSubCategoriesByCategory);
 router.get('/categories-with-subcategories', getCategoriesWithSubcategories);
 
-router.get('/products/featured', getFeaturedProducts); // static
-router.get('/products/related/:productId', getRelatedProducts); // static
-router.get('/products/search', searchProducts); // static
-router.get('/products/:subCategoryId', getAllProductsUser); // dynamic
+router.get('/products/featured', getFeaturedProducts);
+router.get('/products/related/:productId', getRelatedProducts);
+router.get('/products/search', searchProducts);
+router.get('/products/:subCategoryId', getAllProductsUser);
 router.get('/product/:id', getProductByIdUser);
-
 
 router.get('/cart', authenticateUser, getCart);
 router.post('/cart/add', authenticateUser, addToCart);
@@ -58,5 +58,7 @@ router.put('/profile/change-password', authenticateUser, changePassword);
 
 router.get('/gallery', getAllGalleries);
 router.get('/gallery/:id', getGalleryById);
+
+router.post('/contact', contactForm);
 
 export default router;
