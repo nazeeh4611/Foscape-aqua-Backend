@@ -61,9 +61,20 @@ import {
   getSalesReport,
 } from "../Controller/SalesController.js";
 
-import { adminLogin, changePassword, getAdminDetails } from "../Controller/AdminAuthController.js";
+import { adminLogin, changePassword, getAdminDetails, updatePhone } from "../Controller/AdminAuthController.js";
 import { authenticate, authorizeAdmin } from "../Middleware/Auth.js";
 
+// Portfolio Controllers
+import {
+  getPortfolioItems,
+  getPortfolioItem,
+  createPortfolioItem,
+  updatePortfolioItem,
+  deletePortfolioItem,
+  togglePortfolioStatus,
+  getPortfolioStats,
+  toggleFeaturedStatus
+} from "../Controller/PortfolioController.js";
 
 dotenv.config();
 
@@ -81,6 +92,7 @@ const region = required("AWS_REGION");
 const categoryBucket = required("AWS_CATEGORY_BUCKET");
 const propertyBucket = required("AWS_PROPERTY_BUCKET");
 const galleryBucket = "foscape-gallery";
+const portfolioBucket = "foscape-projects"; 
 
 const s3Client = new S3Client({
   region,
@@ -88,7 +100,7 @@ const s3Client = new S3Client({
 });
 
 const isAllowedImage = (mimetype) =>
-  ["image/jpeg", "image/png", "image/gif", "image/webp"].includes(mimetype);
+  ["image/jpeg", "image/png", "image/gif", "image/webp", "image/jpg"].includes(mimetype);
 
 /* ------------------------------ MULTER UPLOADS ------------------------------ */
 
@@ -142,6 +154,31 @@ const galleryUpload = multer({
       : cb(new Error("Invalid image type")),
 });
 
+/* ------------------------------ PORTFOLIO UPLOAD ------------------------------ */
+
+const portfolioUpload = multer({
+  storage: multerS3({
+    s3: s3Client,
+    bucket: portfolioBucket,
+    contentType: multerS3.AUTO_CONTENT_TYPE,
+    key: (req, file, cb) => {
+      const unique = `${Date.now()}-${Math.random().toString(36).substring(2)}`;
+      cb(null, `portfolio-${unique}-${file.originalname.replace(/\s+/g, "-")}`);
+    },
+  }),
+  limits: { 
+    fileSize: 5 * 1024 * 1024, // 5MB per file
+    files: 10 // Maximum 10 files
+  },
+  fileFilter: (req, file, cb) => {
+    if (isAllowedImage(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only image files (JPEG, PNG, GIF, WebP) are allowed"), false);
+    }
+  },
+});
+
 /* ------------------------------ AUTH ROUTE ------------------------------ */
 
 // PUBLIC — Admin Login
@@ -149,6 +186,16 @@ Adminrouter.post("/login", adminLogin);
 
 /* ------------------------------ PROTECTED ROUTES ------------------------------ */
 Adminrouter.use(authenticate, authorizeAdmin);
+
+/* ---------------------- PORTFOLIO ROUTES ---------------------- */
+Adminrouter.get("/portfolio/stats", getPortfolioStats);
+Adminrouter.get("/portfolio", getPortfolioItems);
+Adminrouter.get("/portfolio/:id", getPortfolioItem);
+Adminrouter.post("/portfolio", portfolioUpload.array("images", 10), createPortfolioItem);
+Adminrouter.put("/portfolio/:id", portfolioUpload.array("images", 10), updatePortfolioItem);
+Adminrouter.put("/portfolio/:id/toggle-status", togglePortfolioStatus);
+Adminrouter.put("/portfolio/:id/toggle-featured", toggleFeaturedStatus); // FIXED: Moved here
+Adminrouter.delete("/portfolio/:id", deletePortfolioItem);
 
 /* ---------------------- CATEGORY ---------------------- */
 Adminrouter.get("/categories", getAllCategories);
@@ -198,7 +245,7 @@ Adminrouter.get("/gallery", getAllGallery);
 Adminrouter.post(
   "/add-gallery",
   galleryUpload.fields([
-    { name: "images", maxCount: 3 },
+    { name: "images", maxCount: 10 },
     { name: "thumbnail", maxCount: 1 },
   ]),
   addGalleryItem
@@ -206,7 +253,7 @@ Adminrouter.post(
 Adminrouter.put(
   "/edit-gallery/:id",
   galleryUpload.fields([
-    { name: "images", maxCount: 3 },
+    { name: "images", maxCount: 10 },
     { name: "thumbnail", maxCount: 1 },
   ]),
   updateGalleryItem
@@ -218,7 +265,11 @@ Adminrouter.put("/gallery/:id/status", updateGalleryStatus);
 Adminrouter.get("/sales-report", getSalesReport);
 Adminrouter.get("/sales-report/download-pdf", downloadSalesReportPDF);
 Adminrouter.get("/sales-report/download-excel", downloadSalesReportExcel);
-Adminrouter.put('/change-password',changePassword);
+
+/* ---------------------- ADMIN SETTINGS ---------------------- */
+Adminrouter.put('/change-password', changePassword);
 Adminrouter.get("/me", getAdminDetails);
+Adminrouter.put("/update-phone", updatePhone);
+Adminrouter.put('/:id/toggle-featured', toggleFeaturedStatus);
 
 export default Adminrouter;

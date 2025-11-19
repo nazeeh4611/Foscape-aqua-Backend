@@ -22,7 +22,7 @@ const gallerySchema = new mongoose.Schema(
       required: true,
       validate: {
         validator: function(v) {
-          return v && v.length > 0 && v.length <= 3;
+          return v && v.length > 0 && v.length <= 10;
         },
         message: 'Must have between 1 and 3 media URLs'
       }

@@ -1,6 +1,7 @@
 import Category from "../Model/CategoryModel.js";
 import SubCategory from "../Model/SubCategoryModel.js";
 import product from '../Model/ProductModel.js';
+import Admin from "../Model/AdminModel.js";
 
 export const AllCategories = async (req, res) => {
   try {
@@ -339,5 +340,19 @@ export const getProductByIdUser = async (req, res) => {
       message: 'Error fetching product',
       error: error.message,
     });
+  }
+};
+
+
+export const getContactNumber = async (req, res) => {
+  try {
+    const admin = await Admin.findOne({ role: "admin" })
+      .select("phone");
+
+    res.json({
+      phone: admin?.phone || ""
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Internal server error" });
   }
 };

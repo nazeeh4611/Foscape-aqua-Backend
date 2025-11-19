@@ -2,13 +2,15 @@ import express from "express";
 import path from "path";
 import dotenv from "dotenv";
 import {Userlogin,UserRegister,Logout, getUser, GoogleAuth, ResetPassword, ForgotPassword,VerifyOtp, ResendOtp} from "../Controller/AuthController.js"
-import { AllCategories, getSubCategoriesByCategory,getRelatedProducts,getFeaturedProducts,getProductByIdUser,getAllProductsUser,searchProducts, getCategoriesWithSubcategories } from "../Controller/UserController.js";
+import { AllCategories, getSubCategoriesByCategory,getRelatedProducts,getFeaturedProducts,getProductByIdUser,getAllProductsUser,searchProducts, getCategoriesWithSubcategories, getContactNumber } from "../Controller/UserController.js";
 import { getCart, addToCart, updateCartItem, removeFromCart, clearCart,getWishlist, addToWishlist, removeFromWishlist, clearWishlist } from '../Controller/CartController.js';
 import { createRazorpayOrder, verifyRazorpayPayment, createOrder, getUserOrders, getOrderById, cancelOrder, generateInvoice } from '../Controller/OrderController.js';
 import { getUserProfile, updateUserProfile, changePassword } from '../Controller/UserProfileController.js';
 import { getAllGalleries, getGalleryById } from '../Controller/GalleryController.js';
 import { authenticateUser } from "../Middleware/Auth.js";
 import { contactForm } from "../Controller/ContactController.js";
+import { getAllPortfolios, getFeaturedPortfolios, getPortfolioById } from "../Controller/WorksController.js";
+import { createPortfolioItem } from "../Controller/PortfolioController.js";
 
 dotenv.config();
 
@@ -62,5 +64,15 @@ router.get('/gallery', getAllGalleries);
 router.get('/gallery/:id', getGalleryById);
 
 router.post('/contact', contactForm);
+
+router.get('/phone',getContactNumber)
+
+
+
+router.get('/portfolios/featured', getFeaturedPortfolios);
+router.get('/portfolios', getAllPortfolios);
+router.get('/portfolio/:id', getPortfolioById);
+router.post('/portfolio', createPortfolioItem);
+
 
 export default router;

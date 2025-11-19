@@ -107,3 +107,35 @@ export const getAdminDetails = async (req, res) => {
   }
 };
 
+
+
+export const updatePhone = async (req, res) => {
+  try {
+    const adminId = req.user.id; 
+    const { phone } = req.body;
+
+    if (!phone) {
+      return res.status(400).json({ message: "Phone number is required" });
+    }
+
+    const phoneRegex = /^[0-9]{10}$/;
+    if (!phoneRegex.test(phone)) {
+      return res.status(400).json({ message: "Enter a valid 10-digit phone number" });
+    }
+
+    const updatedAdmin = await Admin.findByIdAndUpdate(
+      adminId,
+      { phone },
+      { new: true }
+    );
+
+    res.json({
+      message: "Phone number updated successfully",
+      admin: updatedAdmin
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Internal server error", error });
+  }
+};
+
+

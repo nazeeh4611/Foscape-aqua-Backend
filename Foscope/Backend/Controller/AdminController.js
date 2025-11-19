@@ -131,9 +131,7 @@ export const getOrderById = async (req, res) => {
 // Update order status (Admin)
 export const updateOrderStatus = async (req, res) => {
   try {
-    console.log("first")
     const { id } = req.params;
-    console.log("first", id)
 
     const { status, note } = req.body;
 
@@ -191,7 +189,6 @@ export const updateOrderStatus = async (req, res) => {
         const emailMessage = adminOrderCancelledEmail(user, order, note);
         
         await sendEmail(user.email, emailSubject, emailMessage);
-        console.log(`Cancellation email sent to ${user.email}`);
       } catch (emailError) {
         console.error('Error sending cancellation email:', emailError);
         // Continue even if email fails
@@ -458,15 +455,12 @@ export const addGalleryItem = async (req, res) => {
     let mediaUrls = [];
     let thumbnailUrl = null;
 
-    // Handle image type - upload images directly
     if (mediaType === 'image' && req.files && req.files['images']) {
       mediaUrls = req.files['images'].map(file => file.location);
     } 
-    // Handle Instagram/YouTube - upload thumbnail and store external URL
     else if ((mediaType === 'instagram' || mediaType === 'youtube') && mediaUrl) {
       mediaUrls = [mediaUrl];
       
-      // Check if thumbnail was uploaded
       if (req.files && req.files['thumbnail'] && req.files['thumbnail'][0]) {
         thumbnailUrl = req.files['thumbnail'][0].location;
       } else {
@@ -516,25 +510,20 @@ export const updateGalleryItem = async (req, res) => {
     let mediaUrls = galleryItem.mediaUrls;
     let thumbnailUrl = galleryItem.thumbnailUrl;
 
-    // Handle image type updates
     if (mediaType === 'image') {
       if (req.files && req.files['images'] && req.files['images'].length > 0) {
         mediaUrls = req.files['images'].map(file => file.location);
       }
-      // Clear thumbnail if switching to image type
       thumbnailUrl = null;
     } 
-    // Handle Instagram/YouTube updates
     else if (mediaType === 'instagram' || mediaType === 'youtube') {
       if (mediaUrl) {
         mediaUrls = [mediaUrl];
       }
       
-      // Update thumbnail if new one is uploaded
       if (req.files && req.files['thumbnail'] && req.files['thumbnail'][0]) {
         thumbnailUrl = req.files['thumbnail'][0].location;
       }
-      // If no new thumbnail and no existing thumbnail, return error
       else if (!thumbnailUrl) {
         return res.status(400).json({ 
           success: false, 
@@ -719,3 +708,4 @@ const adminOrderCancelledEmail = (user, order, note) => `
   </div>
 </div>
 `;
+
