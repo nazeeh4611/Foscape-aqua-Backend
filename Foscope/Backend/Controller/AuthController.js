@@ -545,7 +545,7 @@ export const getUser = async (req, res) => {
     const user = await UserModel.findById(decoded.id).select("-password");
     
     if (!user) {
-      return res.status(404).json({ message: "User not found" });
+      return res.status(404).json({ message: "Please Login to Continue" });
     }
 
     if (user.isBlocked) {
