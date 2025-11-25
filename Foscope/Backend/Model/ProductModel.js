@@ -179,6 +179,9 @@ productSchema.pre('save', async function(next) {
   }
   next();
 });
-
+productSchema.index({ status: 1, subCategory: 1, createdAt: -1 });
+productSchema.index({ status: 1, featured: 1, createdAt: -1 });
+productSchema.index({ name: 'text', description: 'text' });
+productSchema.index({ price: 1, status: 1 });
 const Product = mongoose.model("Product", productSchema);
 export default Product;

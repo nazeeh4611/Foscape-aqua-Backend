@@ -1,7 +1,16 @@
 import Product from "../Model/ProductModel.js";
 import Category from "../Model/CategoryModel.js";
 import SubCategory from "../Model/SubCategoryModel.js";
+import { deleteCachePattern, deleteCache } from "../Utils/Redis.js";
 
+// Helper function to clear product-related caches
+const clearProductCaches = async (productId = null) => {
+  if (productId) {
+    await deleteCache(`product:id:${productId}`);
+    await deleteCachePattern(`products:related:productId:${productId}:*`);
+  }
+  await deleteCachePattern('products:*');
+};
 
 // ==========================================
 // GET ALL PRODUCTS
@@ -53,7 +62,6 @@ export const getAllProducts = async (req, res) => {
   }
 };
 
-
 // ==========================================
 // GET PRODUCT BY ID
 // ==========================================
@@ -73,9 +81,8 @@ export const getProductById = async (req, res) => {
   }
 };
 
-
 // ==========================================
-// CREATE PRODUCT  (with images)
+// CREATE PRODUCT (with images)
 // ==========================================
 export const createProduct = async (req, res) => {
   try {
@@ -89,6 +96,9 @@ export const createProduct = async (req, res) => {
     const populated = await Product.findById(newProduct._id)
       .populate("category", "name")
       .populate("subCategory", "name");
+
+    // Clear all product-related caches
+    await clearProductCaches();
 
     res.status(201).json({
       success: true,
@@ -109,7 +119,9 @@ export const createProduct = async (req, res) => {
   }
 };
 
-
+// ==========================================
+// UPDATE PRODUCT
+// ==========================================
 export const updateProduct = async (req, res) => {
   try {
     let updatedImages = [];
@@ -130,6 +142,9 @@ export const updateProduct = async (req, res) => {
       return res.status(404).json({ success: false, message: "Product not found" });
     }
 
+    // Clear caches for this specific product and all product listings
+    await clearProductCaches(req.params.id);
+
     res.status(200).json({
       success: true,
       message: "Product updated successfully",
@@ -149,8 +164,9 @@ export const updateProduct = async (req, res) => {
   }
 };
 
-
-
+// ==========================================
+// DELETE PRODUCT
+// ==========================================
 export const deleteProduct = async (req, res) => {
   try {
     const product = await Product.findByIdAndDelete(req.params.id);
@@ -158,14 +174,18 @@ export const deleteProduct = async (req, res) => {
     if (!product)
       return res.status(404).json({ success: false, message: "Product not found" });
 
+    // Clear caches for this specific product and all product listings
+    await clearProductCaches(req.params.id);
+
     res.status(200).json({ success: true, message: "Product deleted successfully" });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 };
 
-
-
+// ==========================================
+// TOGGLE PRODUCT STATUS
+// ==========================================
 export const toggleProductStatus = async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
@@ -175,6 +195,9 @@ export const toggleProductStatus = async (req, res) => {
 
     product.status = product.status === "Active" ? "Inactive" : "Active";
     await product.save();
+
+    // Clear caches for this specific product and all product listings
+    await clearProductCaches(req.params.id);
 
     res.status(200).json({
       success: true,
@@ -186,6 +209,9 @@ export const toggleProductStatus = async (req, res) => {
   }
 };
 
+// ==========================================
+// GET CATEGORIES (for product form dropdowns)
+// ==========================================
 export const getCategories = async (req, res) => {
   try {
     const categories = await Category.find().sort({ createdAt: -1 });
@@ -200,6 +226,9 @@ export const getCategories = async (req, res) => {
   }
 };
 
+// ==========================================
+// GET SUBCATEGORIES (for product form dropdowns)
+// ==========================================
 export const getSubCategories = async (req, res) => {
   try {
     const { categoryId } = req.params;

@@ -2,9 +2,16 @@ import Category from "../Model/CategoryModel.js";
 import SubCategory from "../Model/SubCategoryModel.js";
 import product from '../Model/ProductModel.js';
 import Admin from "../Model/AdminModel.js";
-import NodeCache from 'node-cache';
-import { getCache, setCache,deleteCache} from "../Utils/Redis.js";
+import { getCache, setCache, deleteCache, deleteCachePattern } from "../Utils/Redis.js";
 
+const generateCacheKey = (prefix, params = {}) => {
+  const paramString = Object.entries(params)
+    .filter(([_, value]) => value !== undefined && value !== null)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => `${key}:${value}`)
+    .join(':');
+  return paramString ? `${prefix}:${paramString}` : prefix;
+};
 
 export const AllCategories = async (req, res) => {
   try {
@@ -25,7 +32,7 @@ export const AllCategories = async (req, res) => {
       .select('name description image')
       .lean();
 
-    await setCache(cacheKey, categories, 300);
+    await setCache(cacheKey, categories, 300); // 5 minutes
 
     return res.status(200).json({
       success: true,
@@ -44,10 +51,9 @@ export const AllCategories = async (req, res) => {
 };
 
 export const clearCategoryCache = async () => {
-  await deleteCache('categories:all');
+  await deleteCachePattern('categories:*');
+  await deleteCachePattern('subcategories:*');
 };
-
-
 
 export const getSubCategoriesByCategory = async (req, res) => {
   try {
@@ -59,11 +65,22 @@ export const getSubCategoriesByCategory = async (req, res) => {
         message: 'Category ID is required',
       });
     }
+
+    const cacheKey = generateCacheKey('subcategories', { categoryId });
+    
+    const cached = await getCache(cacheKey);
+    if (cached) {
+      return res.status(200).json({
+        success: true,
+        subcategories: cached,
+        cached: true
+      });
+    }
+
     const subcategories = await SubCategory.find({
       categoryId: categoryId,
       status: 'Active',
     }).populate('categoryId', 'name image description');
-
 
     if (!subcategories || subcategories.length === 0) {
       return res.status(200).json({
@@ -73,9 +90,12 @@ export const getSubCategoriesByCategory = async (req, res) => {
       });
     }
 
+    await setCache(cacheKey, subcategories, 300); // 5 minutes
+
     res.status(200).json({
       success: true,
       subcategories,
+      cached: false
     });
   } catch (error) {
     console.error('Error fetching subcategories:', error);
@@ -86,9 +106,6 @@ export const getSubCategoriesByCategory = async (req, res) => {
     });
   }
 };
-
-
-
 export const getAllProductsUser = async (req, res) => {
   try {
     const {
@@ -107,6 +124,25 @@ export const getAllProductsUser = async (req, res) => {
     const limitNum = parseInt(limit);
     const skip = (pageNum - 1) * limitNum;
 
+    const cacheKey = generateCacheKey('products', {
+      subCategoryId,
+      page: pageNum,
+      limit: limitNum,
+      search,
+      minPrice,
+      maxPrice,
+      sortBy,
+      sortOrder
+    });
+
+    const cached = await getCache(cacheKey);
+    if (cached) {
+      return res.status(200).json({
+        ...cached,
+        cached: true
+      });
+    }
+
     const filter = { status: 'Active' };
 
     if (subCategoryId) {
@@ -114,10 +150,7 @@ export const getAllProductsUser = async (req, res) => {
     }
 
     if (search) {
-      filter.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { description: { $regex: search, $options: 'i' } },
-      ];
+      filter.$text = { $search: search }; 
     }
 
     if (minPrice || maxPrice) {
@@ -129,33 +162,28 @@ export const getAllProductsUser = async (req, res) => {
     const sort = {};
     sort[sortBy] = sortOrder === 'asc' ? 1 : -1;
 
-    const totalProducts = await product.countDocuments(filter);
+    // Use Promise.all for parallel execution
+    const [totalProducts, products, subCategoryInfo] = await Promise.all([
+      product.countDocuments(filter),
+      product.find(filter)
+        .select('name price discount images status') 
+        .populate('category', 'name')
+        .populate('subCategory', 'name')
+        .sort(sort)
+        .skip(skip)
+        .limit(limitNum)
+        .lean(),
+      subCategoryId ? 
+        SubCategory.findById(subCategoryId)
+          .select('name categoryId')
+          .populate('categoryId', 'name _id')
+          .lean() 
+        : null
+    ]);
+
     const totalPages = Math.ceil(totalProducts / limitNum);
 
-    const products = await product.find(filter)
-      .populate('category', 'name')
-      .populate('subCategory', 'name')
-      .sort(sort)
-      .skip(skip)
-      .limit(limitNum)
-      .lean();
-
-    // Get subcategory and category info
-    let subCategoryInfo = null;
-    let categoryInfo = null;
-
-    if (subCategoryId && products.length > 0) {
-      const SubCategory = await import('../Model/SubCategoryModel.js');
-      subCategoryInfo = await SubCategory.default.findById(subCategoryId)
-        .populate('categoryId', 'name')
-        .lean();
-      
-      if (subCategoryInfo) {
-        categoryInfo = subCategoryInfo.categoryId;
-      }
-    }
-
-    res.status(200).json({
+    const responseData = {
       success: true,
       products,
       currentPage: pageNum,
@@ -164,9 +192,15 @@ export const getAllProductsUser = async (req, res) => {
       hasNextPage: pageNum < totalPages,
       hasPrevPage: pageNum > 1,
       subCategoryName: subCategoryInfo?.name || null,
-      categoryName: categoryInfo?.name || null,
-      categoryId: categoryInfo?._id || null,
-    });
+      categoryName: subCategoryInfo?.categoryId?.name || null,
+      categoryId: subCategoryInfo?.categoryId?._id || null,
+      cached: false
+    };
+
+    // Increase cache time to 10 minutes for product lists
+    await setCache(cacheKey, responseData, 600);
+
+    res.status(200).json(responseData);
   } catch (error) {
     console.error('Error fetching products:', error);
     res.status(500).json({
@@ -177,32 +211,52 @@ export const getAllProductsUser = async (req, res) => {
   }
 };
 
+
 export const getCategoriesWithSubcategories = async (req, res) => {
   try {
-    const categories = await Category.find({ status: 'Active' })
-      .select('name description image')
-      .lean();
+    const cacheKey = 'categories:with-subcategories';
+    
+    const cached = await getCache(cacheKey);
+    if (cached) {
+      return res.status(200).json({
+        success: true,
+        categories: cached,
+        cached: true
+      });
+    }
 
-    const categoriesWithSubcategories = await Promise.all(
-      categories.map(async (category) => {
-        const subcategories = await SubCategory.find({
-          categoryId: category._id,
-          status: 'Active',
-        })
-          .select('name description image')
-          .lean();
+    // Use aggregation pipeline for better performance
+    const categoriesWithSubcategories = await Category.aggregate([
+      { $match: { status: 'Active' } },
+      {
+        $lookup: {
+          from: 'subcategories',
+          let: { categoryId: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$categoryId', '$$categoryId'] },
+                    { $eq: ['$status', 'Active'] }
+                  ]
+                }
+              }
+            },
+            { $project: { name: 1, description: 1, image: 1 } }
+          ],
+          as: 'subcategories'
+        }
+      },
+      { $project: { name: 1, description: 1, image: 1, subcategories: 1 } }
+    ]);
 
-        return {
-          ...category,
-          subcategories, // attach
-        };
-      })
-    );
+    await setCache(cacheKey, categoriesWithSubcategories, 600);
 
-    // 3️⃣ Send to frontend
     res.status(200).json({
       success: true,
       categories: categoriesWithSubcategories,
+      cached: false
     });
   } catch (error) {
     console.error('Error fetching categories with subcategories:', error);
@@ -214,14 +268,21 @@ export const getCategoriesWithSubcategories = async (req, res) => {
   }
 };
 
-// Get single product by ID
 
-
-// Get related products (same subcategory, excluding current product)
 export const getRelatedProducts = async (req, res) => {
   try {
     const { productId } = req.params;
     const { limit = 4 } = req.query;
+
+    const cacheKey = generateCacheKey('products:related', { productId, limit });
+    
+    const cached = await getCache(cacheKey);
+    if (cached) {
+      return res.status(200).json({
+        ...cached,
+        cached: true
+      });
+    }
 
     const products = await product.findById(productId);
 
@@ -242,10 +303,15 @@ export const getRelatedProducts = async (req, res) => {
       .limit(parseInt(limit))
       .lean();
 
-    res.status(200).json({
+    const responseData = {
       success: true,
       products: relatedProducts,
-    });
+      cached: false
+    };
+
+    await setCache(cacheKey, responseData, 600); // 10 minutes
+
+    res.status(200).json(responseData);
   } catch (error) {
     console.error('Error fetching related products:', error);
     res.status(500).json({
@@ -256,13 +322,11 @@ export const getRelatedProducts = async (req, res) => {
   }
 };
 
-// Get featured products
 export const getFeaturedProducts = async (req, res) => {
   try {
     const { limit = 8 } = req.query;
     const cacheKey = `products:featured:${limit}`;
 
-    // Check cache
     const cached = await getCache(cacheKey);
     if (cached) {
       return res.status(200).json({
@@ -272,18 +336,16 @@ export const getFeaturedProducts = async (req, res) => {
       });
     }
 
-    // Optimized query with minimal data
     const featuredProducts = await product.find({
       status: 'Active',
       featured: true,
     })
-    .select('name description price discount images') // Only select needed fields
+    .select('name description price discount images')
     .limit(parseInt(limit))
     .sort({ createdAt: -1 })
     .lean();
 
-    // Cache for 10 minutes
-    await setCache(cacheKey, featuredProducts, 600);
+    await setCache(cacheKey, featuredProducts, 600); // 10 minutes
 
     res.status(200).json({
       success: true,
@@ -299,7 +361,7 @@ export const getFeaturedProducts = async (req, res) => {
     });
   }
 };
-// Search products
+
 export const searchProducts = async (req, res) => {
   try {
     const { query, limit = 10 } = req.query;
@@ -311,23 +373,40 @@ export const searchProducts = async (req, res) => {
       });
     }
 
+    const cacheKey = generateCacheKey('products:search', { query, limit });
+    
+    const cached = await getCache(cacheKey);
+    if (cached) {
+      return res.status(200).json({
+        ...cached,
+        cached: true
+      });
+    }
+
+    // Use text index for better search performance
     const products = await product.find({
       status: 'Active',
-      $or: [
-        { name: { $regex: query, $options: 'i' } },
-        { description: { $regex: query, $options: 'i' } },
-      ],
+      $text: { $search: query }
+    }, {
+      score: { $meta: 'textScore' }
     })
+      .select('name price discount images')
       .populate('category', 'name')
       .populate('subCategory', 'name')
+      .sort({ score: { $meta: 'textScore' } })
       .limit(parseInt(limit))
       .lean();
 
-    res.status(200).json({
+    const responseData = {
       success: true,
       products,
       count: products.length,
-    });
+      cached: false
+    };
+
+    await setCache(cacheKey, responseData, 300);
+
+    res.status(200).json(responseData);
   } catch (error) {
     console.error('Error searching products:', error);
     res.status(500).json({
@@ -338,10 +417,19 @@ export const searchProducts = async (req, res) => {
   }
 };
 
-
 export const getProductByIdUser = async (req, res) => {
   try {
     const { id } = req.params;
+
+    const cacheKey = generateCacheKey('product', { id });
+    
+    const cached = await getCache(cacheKey);
+    if (cached) {
+      return res.status(200).json({
+        ...cached,
+        cached: true
+      });
+    }
 
     const foundProduct = await product.findById(id)
       .populate('category', 'name description image')
@@ -362,10 +450,15 @@ export const getProductByIdUser = async (req, res) => {
       });
     }
 
-    res.status(200).json({
+    const responseData = {
       success: true,
       product: foundProduct,
-    });
+      cached: false
+    };
+
+    await setCache(cacheKey, responseData, 600); // 10 minutes
+
+    res.status(200).json(responseData);
   } catch (error) {
     console.error('Error fetching product:', error);
     res.status(500).json({
@@ -376,18 +469,101 @@ export const getProductByIdUser = async (req, res) => {
   }
 };
 
-
 export const getContactNumber = async (req, res) => {
   try {
+    const cacheKey = 'admin:contact';
+    
+    const cached = await getCache(cacheKey);
+    if (cached) {
+      return res.json(cached);
+    }
+
     const admin = await Admin.findOne({ role: "admin" })
       .select("phone");
 
-    res.json({
+    const responseData = {
       phone: admin?.phone || ""
-    });
+    };
+
+    await setCache(cacheKey, responseData, 3600); // 1 hour
+
+    res.json(responseData);
   } catch (error) {
     res.status(500).json({ message: "Internal server error" });
   }
 };
 
+// Cache invalidation helper - call this when products/categories are updated
+export const clearProductCache = async (productId = null) => {
+  if (productId) {
+    await deleteCache(`product:id:${productId}`);
+  }
+  await deleteCachePattern('products:*');
+};
 
+export const clearSubCategoryCache = async (categoryId = null) => {
+  if (categoryId) {
+    await deleteCache(`subcategories:categoryId:${categoryId}`);
+  }
+  await deleteCachePattern('subcategories:*');
+  await deleteCachePattern('categories:*');
+};
+
+export const getBatchHomeData = async (req, res) => {
+  try {
+    const cacheKey = 'home:batch-data';
+    
+    const cached = await getCache(cacheKey);
+    if (cached) {
+      return res.status(200).json({
+        success: true,
+        data: cached,
+        cached: true
+      });
+    }
+
+    // Fetch all home page data in parallel
+    const [categories, featuredProducts, stats] = await Promise.all([
+      Category.find({ status: 'Active' })
+        .select('name image')
+        .limit(8)
+        .lean(),
+      product.find({ status: 'Active', featured: true })
+        .select('name price discount images')
+        .limit(8)
+        .sort({ createdAt: -1 })
+        .lean(),
+      product.aggregate([
+        { $match: { status: 'Active' } },
+        {
+          $group: {
+            _id: null,
+            totalProducts: { $sum: 1 },
+            avgPrice: { $avg: '$price' }
+          }
+        }
+      ])
+    ]);
+
+    const batchData = {
+      categories,
+      featuredProducts,
+      stats: stats[0] || { totalProducts: 0, avgPrice: 0 }
+    };
+
+    await setCache(cacheKey, batchData, 600);
+
+    res.status(200).json({
+      success: true,
+      data: batchData,
+      cached: false
+    });
+  } catch (error) {
+    console.error('Error fetching batch data:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching data',
+      error: error.message,
+    });
+  }
+};

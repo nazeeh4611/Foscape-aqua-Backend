@@ -1,9 +1,16 @@
 import Category from "../Model/CategoryModel.js";
+import { deleteCachePattern } from "../Utils/Redis.js";
+
+// Helper function to clear all category-related caches
+const clearAllCategoryCaches = async () => {
+  await deleteCachePattern('categories:*');
+  await deleteCachePattern('subcategories:*');
+  await deleteCachePattern('products:*');
+};
 
 // ✅ Get all categories (Admin)
 export const getAllCategories = async (req, res) => {
   try {
-
     const categories = await Category.find().sort({ createdAt: -1 });
 
     return res.status(200).json({
@@ -77,11 +84,14 @@ export const createCategory = async (req, res) => {
     const newCategory = new Category({
       name: name.trim(),
       description: description.trim(),
-      image: req.file.location, // multer-s3 puts the full https URL here
+      image: req.file.location,
       status: status || "Active",
     });
 
     await newCategory.save();
+
+    // Clear all category-related caches
+    await clearAllCategoryCaches();
 
     return res.status(201).json({
       success: true,
@@ -97,7 +107,6 @@ export const createCategory = async (req, res) => {
     });
   }
 };
-
 
 // ✅ Update category (with optional image upload)
 export const updateCategory = async (req, res) => {
@@ -136,6 +145,9 @@ export const updateCategory = async (req, res) => {
 
     await category.save();
 
+    // Clear all category-related caches
+    await clearAllCategoryCaches();
+
     return res.status(200).json({
       success: true,
       message: "Category updated successfully",
@@ -165,6 +177,9 @@ export const deleteCategory = async (req, res) => {
     }
 
     await Category.findByIdAndDelete(id);
+
+    // Clear all category-related caches
+    await clearAllCategoryCaches();
 
     return res.status(200).json({
       success: true,
@@ -197,6 +212,9 @@ export const toggleCategoryStatus = async (req, res) => {
     category.status = status;
     await category.save();
 
+    // Clear all category-related caches
+    await clearAllCategoryCaches();
+
     return res.status(200).json({
       success: true,
       message: "Category status updated successfully",
@@ -211,6 +229,3 @@ export const toggleCategoryStatus = async (req, res) => {
     });
   }
 };
-
-
-

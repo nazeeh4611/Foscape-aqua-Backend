@@ -9,9 +9,20 @@ import Userrouter from './Routes/UserRoute.js';
 import databaseConnection from './Utils/Db.js';
 import cookieParser from 'cookie-parser';
 import nodeCron from 'node-cron';
-import { initRedis } from './Utils/Redis.js';
+import { getCache, initRedis, setCache } from './Utils/Redis.js';
 
 initRedis();
+
+// Test Redis connection after server starts
+setTimeout(async () => {
+    try {
+      await setCache('test', { message: 'Hello Redis!' }, 60);
+      const result = await getCache('test');
+      console.log('✅ Redis test:', result);
+    } catch (error) {
+      console.error('❌ Redis test failed:', error);
+    }
+  }, 3000);
 
 dotenv.config();
 databaseConnection();

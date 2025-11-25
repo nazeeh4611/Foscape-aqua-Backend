@@ -1,13 +1,24 @@
-
 import SubCategory from "../Model/SubCategoryModel.js";
 import Category from "../Model/CategoryModel.js";
+import { deleteCachePattern, deleteCache } from "../Utils/Redis.js";
 
-// ✅ Get all subcategories (Admin)
+// Helper function to clear subcategory-related caches
+const clearSubCategoryCaches = async (categoryId = null) => {
+  if (categoryId) {
+    await deleteCache(`subcategories:categoryId:${categoryId}`);
+  }
+  await deleteCachePattern('subcategories:*');
+  await deleteCachePattern('categories:*');
+  await deleteCachePattern('products:*');
+};
+
+// ✅ Get all subcategories (Admin) - No cache needed for admin
 export const getAllSubCategories = async (req, res) => {
   try {
     const subCategories = await SubCategory.find()
       .populate('categoryId', 'name')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean(); // Add lean() for better performance
 
     return res.status(200).json({
       success: true,
@@ -28,7 +39,9 @@ export const getAllSubCategories = async (req, res) => {
 export const getSubCategoryById = async (req, res) => {
   try {
     const { id } = req.params;
-    const subCategory = await SubCategory.findById(id).populate('categoryId', 'name');
+    const subCategory = await SubCategory.findById(id)
+      .populate('categoryId', 'name')
+      .lean();
 
     if (!subCategory) {
       return res.status(404).json({
@@ -59,7 +72,8 @@ export const getSubCategoriesByCategory = async (req, res) => {
 
     const subCategories = await SubCategory.find({ categoryId: categoryId })
       .populate('categoryId', 'name')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
 
     return res.status(200).json({
       success: true,
@@ -96,7 +110,7 @@ export const createSubCategory = async (req, res) => {
     }
 
     // Check if category exists
-    const categoryExists = await Category.findById(category);
+    const categoryExists = await Category.findById(category).lean();
     if (!categoryExists) {
       return res.status(404).json({
         success: false,
@@ -107,8 +121,9 @@ export const createSubCategory = async (req, res) => {
     // Check if subcategory already exists in this category
     const exists = await SubCategory.findOne({ 
       name: name.trim(), 
-      category: category 
-    });
+      categoryId: category 
+    }).lean();
+    
     if (exists) {
       return res.status(400).json({
         success: false,
@@ -125,9 +140,10 @@ export const createSubCategory = async (req, res) => {
     });
 
     await newSubCategory.save();
-
-    // Populate category before sending response
     await newSubCategory.populate('categoryId', 'name');
+
+    // Clear subcategory-related caches
+    await clearSubCategoryCaches(category);
 
     return res.status(201).json({
       success: true,
@@ -148,7 +164,7 @@ export const updateSubCategory = async (req, res) => {
   try {
     const { id } = req.params;
     const { name, description, status } = req.body;
-    const categoryId = req.body.category
+    const categoryId = req.body.category;
 
     const subCategory = await SubCategory.findById(id);
     if (!subCategory) {
@@ -156,10 +172,12 @@ export const updateSubCategory = async (req, res) => {
         success: false,
         message: "SubCategory not found",
       });
-    } 
+    }
 
-    if (categoryId && categoryId !== subCategory.category.toString()) {
-      const categoryExists = await Category.findById(categoryId);
+    const oldCategoryId = subCategory.categoryId.toString();
+
+    if (categoryId && categoryId !== oldCategoryId) {
+      const categoryExists = await Category.findById(categoryId).lean();
       if (!categoryExists) {
         return res.status(404).json({
           success: false,
@@ -175,7 +193,7 @@ export const updateSubCategory = async (req, res) => {
         name: name.trim(),
         categoryId: categoryId || subCategory.categoryId, 
         _id: { $ne: id },
-      });
+      }).lean();
 
       if (existingSubCategory) {
         return res.status(400).json({
@@ -187,7 +205,6 @@ export const updateSubCategory = async (req, res) => {
       subCategory.name = name.trim();
     }
 
-    // Update other fields
     if (description) subCategory.description = description.trim();
     if (status) subCategory.status = status;
 
@@ -197,6 +214,12 @@ export const updateSubCategory = async (req, res) => {
 
     await subCategory.save();
     await subCategory.populate("categoryId", "name");
+
+    // Clear caches for both old and new category if category changed
+    await clearSubCategoryCaches(oldCategoryId);
+    if (categoryId && categoryId !== oldCategoryId) {
+      await clearSubCategoryCaches(categoryId);
+    }
 
     return res.status(200).json({
       success: true,
@@ -214,14 +237,12 @@ export const updateSubCategory = async (req, res) => {
   }
 };
 
-
-
 // ✅ Delete subcategory
 export const deleteSubCategory = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const subCategory = await SubCategory.findById(id);
+    const subCategory = await SubCategory.findById(id).lean();
     if (!subCategory) {
       return res.status(404).json({
         success: false,
@@ -229,7 +250,12 @@ export const deleteSubCategory = async (req, res) => {
       });
     }
 
+    const categoryId = subCategory.categoryId.toString();
+
     await SubCategory.findByIdAndDelete(id);
+
+    // Clear subcategory-related caches
+    await clearSubCategoryCaches(categoryId);
 
     return res.status(200).json({
       success: true,
@@ -259,9 +285,14 @@ export const toggleSubCategoryStatus = async (req, res) => {
       });
     }
 
+    const categoryId = subCategory.categoryId.toString();
+
     subCategory.status = status;
     await subCategory.save();
     await subCategory.populate('categoryId', 'name');
+
+    // Clear subcategory-related caches
+    await clearSubCategoryCaches(categoryId);
 
     return res.status(200).json({
       success: true,
