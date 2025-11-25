@@ -141,6 +141,8 @@ const productSchema = new mongoose.Schema(
 productSchema.index({ name: "text", description: "text" });
 productSchema.index({ category: 1, status: 1 });
 productSchema.index({ sku: 1 });
+productSchema.index({ status: 1, featured: 1, createdAt: -1 });
+
 
 // Pre-save validation based on category
 productSchema.pre('save', async function(next) {

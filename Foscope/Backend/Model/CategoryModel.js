@@ -23,6 +23,7 @@ const categorySchema = new mongoose.Schema({
 }, {
   timestamps: true
 });
+categorySchema.index({ status: 1, createdAt: -1 });
 
 categorySchema.set('toJSON', {
   transform: function(doc, ret) {

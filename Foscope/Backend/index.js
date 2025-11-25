@@ -9,6 +9,10 @@ import Userrouter from './Routes/UserRoute.js';
 import databaseConnection from './Utils/Db.js';
 import cookieParser from 'cookie-parser';
 import nodeCron from 'node-cron';
+import { initRedis } from './Utils/Redis.js';
+
+initRedis();
+
 dotenv.config();
 databaseConnection();
 
