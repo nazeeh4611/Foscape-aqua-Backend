@@ -3,6 +3,7 @@ import SubCategory from "../Model/SubCategoryModel.js";
 import product from '../Model/ProductModel.js';
 import Admin from "../Model/AdminModel.js";
 import { getCache, setCache, deleteCache, deleteCachePattern } from "../Utils/Redis.js";
+import Portfolio from "../Model/ProjectModel.js";
 
 const generateCacheKey = (prefix, params = {}) => {
   const paramString = Object.entries(params)
@@ -560,6 +561,62 @@ export const getBatchHomeData = async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching batch data:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching data',
+      error: error.message,
+    });
+  }
+};
+
+export const getHomeData = async (req, res) => {
+  try {
+    const cacheKey = 'home:initial-data';
+    
+    const cached = await getCache(cacheKey);
+    if (cached) {
+      return res.status(200).json({
+        success: true,
+        data: cached,
+        cached: true
+      });
+    }
+
+    const [categories, featuredProducts, featuredPortfolios] = await Promise.all([
+      Category.find({ status: 'Active' })
+        .select('name description image')
+        .sort({ createdAt: -1 })
+        .limit(8)
+        .lean(),
+      
+      product.find({ status: 'Active', featured: true })
+        .select('name description price discount images')
+        .limit(8)
+        .sort({ createdAt: -1 })
+        .lean(),
+      
+      Portfolio.find({ featured: true, status: 'Active' })
+        .select('name description category mediaUrls')
+        .sort({ featuredAt: -1 })
+        .limit(6)
+        .lean()
+    ]);
+
+    const homeData = {
+      categories,
+      featuredProducts,
+      featuredPortfolios
+    };
+
+    await setCache(cacheKey, homeData, 600);
+
+    res.status(200).json({
+      success: true,
+      data: homeData,
+      cached: false
+    });
+  } catch (error) {
+    console.error('Error fetching home data:', error);
     res.status(500).json({
       success: false,
       message: 'Error fetching data',

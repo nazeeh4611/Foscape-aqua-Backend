@@ -46,8 +46,20 @@ export const initRedis = () => {
   }
 };
 
+
+
 // Initialize on module load
 initRedis();
+
+let isConnected = false;
+
+redisClient?.on('ready', () => {
+  isConnected = true;
+});
+
+redisClient?.on('close', () => {
+  isConnected = false;
+});
 
 // In-memory cache fallback
 const memoryCache = new Map();
@@ -61,7 +73,7 @@ const shouldCompress = (data) => {
 
 // Check if Redis is available and connected
 const isRedisAvailable = () => {
-  return redisClient && redisClient.status === 'ready';
+  return redisClient && isConnected;
 };
 
 export const getCache = async (key) => {
