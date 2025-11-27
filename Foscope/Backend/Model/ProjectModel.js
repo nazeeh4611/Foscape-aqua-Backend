@@ -76,7 +76,7 @@ const portfolioSchema = new mongoose.Schema({
   portfolioSchema.index({ name: 'text', description: 'text' });
   portfolioSchema.index({ category: 1, status: 1 });
   portfolioSchema.index({ createdAt: -1 });
-  portfolioSchema.index({ featured: -1, featuredAt: -1 }); 
+  portfolioSchema.index({ featured: 1,status:1, featuredAt: -1 }); 
 
 const Portfolio = mongoose.model('Portfolio', portfolioSchema);
 

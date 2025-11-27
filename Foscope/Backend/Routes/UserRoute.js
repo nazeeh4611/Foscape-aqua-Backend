@@ -2,7 +2,7 @@ import express from "express";
 import path from "path";
 import dotenv from "dotenv";
 import {Userlogin,UserRegister,Logout, getUser, GoogleAuth, ResetPassword, ForgotPassword,VerifyOtp, ResendOtp} from "../Controller/AuthController.js"
-import { AllCategories, getSubCategoriesByCategory,getRelatedProducts,getFeaturedProducts,getProductByIdUser,getAllProductsUser,searchProducts, getCategoriesWithSubcategories, getContactNumber, getHomeData } from "../Controller/UserController.js";
+import { AllCategories, getSubCategoriesByCategory,getRelatedProducts,getFeaturedProducts,getProductByIdUser,getAllProductsUser,searchProducts, getCategoriesWithSubcategories, getContactNumber, getHomeData, getFeaturedPortfoliosForHome } from "../Controller/UserController.js";
 import { getCart, addToCart, updateCartItem, removeFromCart, clearCart,getWishlist, addToWishlist, removeFromWishlist, clearWishlist } from '../Controller/CartController.js';
 import { createRazorpayOrder, verifyRazorpayPayment, createOrder, getUserOrders, getOrderById, cancelOrder, generateInvoice } from '../Controller/OrderController.js';
 import { getUserProfile, updateUserProfile, changePassword } from '../Controller/UserProfileController.js';
@@ -75,6 +75,7 @@ router.get('/portfolio/:id', getPortfolioById);
 router.post('/portfolio', createPortfolioItem);
 
 router.get('/home-data', getHomeData);
+router.get('/featured-portfolios', getFeaturedPortfoliosForHome);
 
 
 

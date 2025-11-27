@@ -569,10 +569,12 @@ export const getBatchHomeData = async (req, res) => {
   }
 };
 
+
 export const getHomeData = async (req, res) => {
   try {
     const cacheKey = 'home:initial-data';
     
+    // Check cache first
     const cached = await getCache(cacheKey);
     if (cached) {
       return res.status(200).json({
@@ -582,33 +584,32 @@ export const getHomeData = async (req, res) => {
       });
     }
 
-    const [categories, featuredProducts, featuredPortfolios] = await Promise.all([
+    // Fetch only essential data for initial render - much faster!
+    const [categories, featuredProducts] = await Promise.all([
       Category.find({ status: 'Active' })
         .select('name description image')
         .sort({ createdAt: -1 })
         .limit(8)
-        .lean(),
+        .lean()
+        .maxTimeMS(3000), // Timeout after 3 seconds
       
       product.find({ status: 'Active', featured: true })
         .select('name description price discount images')
         .limit(8)
         .sort({ createdAt: -1 })
-        .lean(),
-      
-      Portfolio.find({ featured: true, status: 'Active' })
-        .select('name description category mediaUrls')
-        .sort({ featuredAt: -1 })
-        .limit(6)
         .lean()
+        .maxTimeMS(3000)
     ]);
 
+    // Return immediately with essential data
     const homeData = {
-      categories,
-      featuredProducts,
-      featuredPortfolios
+      categories: categories || [],
+      featuredProducts: featuredProducts || [],
+      featuredPortfolios: [] // Load this separately on client
     };
 
-    await setCache(cacheKey, homeData, 600);
+    // Cache for 5 minutes
+    await setCache(cacheKey, homeData, 300);
 
     res.status(200).json({
       success: true,
@@ -617,10 +618,56 @@ export const getHomeData = async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching home data:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching data',
-      error: error.message,
+    // Return empty data instead of error to prevent blocking
+    res.status(200).json({
+      success: true,
+      data: {
+        categories: [],
+        featuredProducts: [],
+        featuredPortfolios: []
+      },
+      cached: false
+    });
+  }
+};
+
+
+export const getFeaturedPortfoliosForHome = async (req, res) => {
+  try {
+    const cacheKey = 'home:featured-portfolios';
+    
+    const cached = await getCache(cacheKey);
+    if (cached) {
+      return res.status(200).json({
+        success: true,
+        portfolios: cached,
+        cached: true
+      });
+    }
+
+    const featuredPortfolios = await Portfolio.find({ 
+      featured: true, 
+      status: 'Active' 
+    })
+      .select('name description category mediaUrls')
+      .sort({ featuredAt: -1 })
+      .limit(6)
+      .lean()
+      .maxTimeMS(3000);
+
+    await setCache(cacheKey, featuredPortfolios, 600);
+
+    res.status(200).json({
+      success: true,
+      portfolios: featuredPortfolios || [],
+      cached: false
+    });
+  } catch (error) {
+    console.error('Error fetching featured portfolios:', error);
+    res.status(200).json({
+      success: true,
+      portfolios: [],
+      cached: false
     });
   }
 };
