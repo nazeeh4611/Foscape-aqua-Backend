@@ -40,6 +40,8 @@ const cartSchema = new mongoose.Schema({
   toObject: { virtuals: true }
 });
 
+cartSchema.index({ user: 1 });
+cartSchema.index({ 'items.product': 1 });
 cartSchema.pre('save', function(next) {
   this.totalItems = this.items.reduce((sum, item) => sum + item.quantity, 0);
   this.totalAmount = this.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);

@@ -1,55 +1,35 @@
-
 import Cart from '../Model/CartModel.js';
 import Product from '../Model/ProductModel.js';
 import Wishlist from '../Model/WishListModel.js';
 
-export const getCart = async (req, res) => {
-  try {
-    const userId = req.user._id;
-
-    let cart = await Cart.findOne({ user: userId })
-      .populate({
-        path: 'items.product',
-        select: 'name price images stock status category subCategory',
-        populate: [
-          { path: 'category', select: 'name' },
-          { path: 'subCategory', select: 'name' }
-        ]
-      });
-
-    if (!cart) {
-      cart = await Cart.create({ user: userId, items: [] });
-    }
-
-    const validItems = cart.items.filter(item => 
-      item.product && item.product.status === 'Active'
-    );
-
-    if (validItems.length !== cart.items.length) {
-      cart.items = validItems;
-      await cart.save();
-    }
-
-    res.status(200).json({
-      success: true,
-      cart,
-    });
-  } catch (error) {
-    console.error('Error fetching cart:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching cart',
-      error: error.message,
-    });
-  }
+// Optimized populate configuration
+const CART_POPULATE = {
+  path: 'items.product',
+  select: 'name price images stock status category subCategory',
+  populate: [
+    { path: 'category', select: 'name' },
+    { path: 'subCategory', select: 'name' }
+  ]
 };
+
+// Lean populate for faster queries (no Mongoose overhead)
+const getCartWithLean = async (userId) => {
+  return await Cart.findOne({ user: userId })
+    .populate(CART_POPULATE)
+    .lean();
+};
+
+
 
 export const addToCart = async (req, res) => {
   try {
     const userId = req.user._id;
     const { productId, quantity = 1 } = req.body;
 
-    const product = await Product.findById(productId);
+    // Single optimized query with only needed fields
+    const product = await Product.findById(productId)
+      .select('price stock status')
+      .lean();
 
     if (!product) {
       return res.status(404).json({
@@ -72,51 +52,56 @@ export const addToCart = async (req, res) => {
       });
     }
 
+    // Find or create cart and update in one operation
     let cart = await Cart.findOne({ user: userId });
 
     if (!cart) {
-      cart = await Cart.create({ user: userId, items: [] });
-    }
+      // Create new cart with the item
+      cart = await Cart.create({
+        user: userId,
+        items: [{
+          product: productId,
+          quantity,
+          price: product.price,
+        }]
+      });
+    } else {
+      const existingItemIndex = cart.items.findIndex(
+        item => item.product.toString() === productId
+      );
 
-    const existingItemIndex = cart.items.findIndex(
-      item => item.product.toString() === productId
-    );
+      if (existingItemIndex > -1) {
+        const newQuantity = cart.items[existingItemIndex].quantity + quantity;
+        
+        if (newQuantity > product.stock) {
+          return res.status(400).json({
+            success: false,
+            message: 'Cannot add more than available stock',
+          });
+        }
 
-    if (existingItemIndex > -1) {
-      const newQuantity = cart.items[existingItemIndex].quantity + quantity;
-      
-      if (newQuantity > product.stock) {
-        return res.status(400).json({
-          success: false,
-          message: 'Cannot add more than available stock',
+        cart.items[existingItemIndex].quantity = newQuantity;
+        cart.items[existingItemIndex].price = product.price;
+      } else {
+        cart.items.push({
+          product: productId,
+          quantity,
+          price: product.price,
         });
       }
 
-      cart.items[existingItemIndex].quantity = newQuantity;
-    } else {
-      cart.items.push({
-        product: productId,
-        quantity,
-        price: product.price,
-      });
+      await cart.save();
     }
 
-    await cart.save();
-
-    cart = await Cart.findOne({ user: userId })
-      .populate({
-        path: 'items.product',
-        select: 'name price images stock status category subCategory',
-        populate: [
-          { path: 'category', select: 'name' },
-          { path: 'subCategory', select: 'name' }
-        ]
-      });
+    // Only populate after save, using lean for faster response
+    const populatedCart = await Cart.findOne({ user: userId })
+      .populate(CART_POPULATE)
+      .lean();
 
     res.status(200).json({
       success: true,
       message: 'Product added to cart',
-      cart,
+      cart: populatedCart,
     });
   } catch (error) {
     console.error('Error adding to cart:', error);
@@ -140,7 +125,10 @@ export const updateCartItem = async (req, res) => {
       });
     }
 
-    const product = await Product.findById(productId);
+    // Optimized product check with only needed fields
+    const product = await Product.findById(productId)
+      .select('price stock')
+      .lean();
 
     if (!product) {
       return res.status(404).json({
@@ -156,40 +144,27 @@ export const updateCartItem = async (req, res) => {
       });
     }
 
-    let cart = await Cart.findOne({ user: userId });
+    // Update using findOneAndUpdate for atomic operation
+    const cart = await Cart.findOneAndUpdate(
+      { 
+        user: userId,
+        'items.product': productId 
+      },
+      {
+        $set: {
+          'items.$.quantity': quantity,
+          'items.$.price': product.price
+        }
+      },
+      { new: true }
+    ).populate(CART_POPULATE).lean();
 
     if (!cart) {
       return res.status(404).json({
         success: false,
-        message: 'Cart not found',
+        message: 'Cart or item not found',
       });
     }
-
-    const itemIndex = cart.items.findIndex(
-      item => item.product.toString() === productId
-    );
-
-    if (itemIndex === -1) {
-      return res.status(404).json({
-        success: false,
-        message: 'Item not found in cart',
-      });
-    }
-
-    cart.items[itemIndex].quantity = quantity;
-    cart.items[itemIndex].price = product.price;
-
-    await cart.save();
-
-    cart = await Cart.findOne({ user: userId })
-      .populate({
-        path: 'items.product',
-        select: 'name price images stock status category subCategory',
-        populate: [
-          { path: 'category', select: 'name' },
-          { path: 'subCategory', select: 'name' }
-        ]
-      });
 
     res.status(200).json({
       success: true,
@@ -211,7 +186,12 @@ export const removeFromCart = async (req, res) => {
     const userId = req.user._id;
     const { productId } = req.params;
 
-    let cart = await Cart.findOne({ user: userId });
+    // Atomic remove operation
+    const cart = await Cart.findOneAndUpdate(
+      { user: userId },
+      { $pull: { items: { product: productId } } },
+      { new: true }
+    ).populate(CART_POPULATE).lean();
 
     if (!cart) {
       return res.status(404).json({
@@ -219,22 +199,6 @@ export const removeFromCart = async (req, res) => {
         message: 'Cart not found',
       });
     }
-
-    cart.items = cart.items.filter(
-      item => item.product.toString() !== productId
-    );
-
-    await cart.save();
-
-    cart = await Cart.findOne({ user: userId })
-      .populate({
-        path: 'items.product',
-        select: 'name price images stock status category subCategory',
-        populate: [
-          { path: 'category', select: 'name' },
-          { path: 'subCategory', select: 'name' }
-        ]
-      });
 
     res.status(200).json({
       success: true,
@@ -255,7 +219,12 @@ export const clearCart = async (req, res) => {
   try {
     const userId = req.user._id;
 
-    let cart = await Cart.findOne({ user: userId });
+    // Atomic clear operation
+    const cart = await Cart.findOneAndUpdate(
+      { user: userId },
+      { items: [] },
+      { new: true }
+    ).lean();
 
     if (!cart) {
       return res.status(404).json({
@@ -263,9 +232,6 @@ export const clearCart = async (req, res) => {
         message: 'Cart not found',
       });
     }
-
-    cart.items = [];
-    await cart.save();
 
     res.status(200).json({
       success: true,
@@ -282,21 +248,24 @@ export const clearCart = async (req, res) => {
   }
 };
 
+// WISHLIST OPERATIONS (also optimized)
 
+const WISHLIST_POPULATE = {
+  path: 'products',
+  select: 'name price images stock status category subCategory',
+  populate: [
+    { path: 'category', select: 'name' },
+    { path: 'subCategory', select: 'name' }
+  ]
+};
 
 export const getWishlist = async (req, res) => {
   try {
     const userId = req.user._id;
 
     let wishlist = await Wishlist.findOne({ user: userId })
-      .populate({
-        path: 'products',
-        select: 'name price images stock status category subCategory',
-        populate: [
-          { path: 'category', select: 'name' },
-          { path: 'subCategory', select: 'name' }
-        ]
-      });
+      .populate(WISHLIST_POPULATE)
+      .lean();
 
     if (!wishlist) {
       wishlist = await Wishlist.create({ user: userId, products: [] });
@@ -307,17 +276,12 @@ export const getWishlist = async (req, res) => {
     );
 
     if (validProducts.length !== wishlist.products.length) {
-      wishlist.products = validProducts.map(p => p._id);
-      await wishlist.save();
-      wishlist = await Wishlist.findOne({ user: userId })
-        .populate({
-          path: 'products',
-          select: 'name price images stock status category subCategory',
-          populate: [
-            { path: 'category', select: 'name' },
-            { path: 'subCategory', select: 'name' }
-          ]
-        });
+      await Wishlist.findOneAndUpdate(
+        { user: userId },
+        { products: validProducts.map(p => p._id) },
+        { new: true }
+      );
+      wishlist.products = validProducts;
     }
 
     res.status(200).json({
@@ -339,7 +303,10 @@ export const addToWishlist = async (req, res) => {
     const userId = req.user._id;
     const { productId } = req.body;
 
-    const product = await Product.findById(productId);
+    // Optimized product check
+    const product = await Product.findById(productId)
+      .select('status')
+      .lean();
 
     if (!product) {
       return res.status(404).json({
@@ -355,31 +322,25 @@ export const addToWishlist = async (req, res) => {
       });
     }
 
-    let wishlist = await Wishlist.findOne({ user: userId });
+    // Check if already exists and add in one operation
+    const existingWishlist = await Wishlist.findOne({
+      user: userId,
+      products: productId
+    }).select('_id').lean();
 
-    if (!wishlist) {
-      wishlist = await Wishlist.create({ user: userId, products: [] });
-    }
-
-    if (wishlist.products.includes(productId)) {
+    if (existingWishlist) {
       return res.status(400).json({
         success: false,
         message: 'Product already in wishlist',
       });
     }
 
-    wishlist.products.push(productId);
-    await wishlist.save();
-
-    wishlist = await Wishlist.findOne({ user: userId })
-      .populate({
-        path: 'products',
-        select: 'name price images stock status category subCategory',
-        populate: [
-          { path: 'category', select: 'name' },
-          { path: 'subCategory', select: 'name' }
-        ]
-      });
+    // Atomic add operation
+    const wishlist = await Wishlist.findOneAndUpdate(
+      { user: userId },
+      { $addToSet: { products: productId } },
+      { upsert: true, new: true }
+    ).populate(WISHLIST_POPULATE).lean();
 
     res.status(200).json({
       success: true,
@@ -401,7 +362,12 @@ export const removeFromWishlist = async (req, res) => {
     const userId = req.user._id;
     const { productId } = req.params;
 
-    let wishlist = await Wishlist.findOne({ user: userId });
+    // Atomic remove operation
+    const wishlist = await Wishlist.findOneAndUpdate(
+      { user: userId },
+      { $pull: { products: productId } },
+      { new: true }
+    ).populate(WISHLIST_POPULATE).lean();
 
     if (!wishlist) {
       return res.status(404).json({
@@ -409,22 +375,6 @@ export const removeFromWishlist = async (req, res) => {
         message: 'Wishlist not found',
       });
     }
-
-    wishlist.products = wishlist.products.filter(
-      id => id.toString() !== productId
-    );
-
-    await wishlist.save();
-
-    wishlist = await Wishlist.findOne({ user: userId })
-      .populate({
-        path: 'products',
-        select: 'name price images stock status category subCategory',
-        populate: [
-          { path: 'category', select: 'name' },
-          { path: 'subCategory', select: 'name' }
-        ]
-      });
 
     res.status(200).json({
       success: true,
@@ -445,7 +395,12 @@ export const clearWishlist = async (req, res) => {
   try {
     const userId = req.user._id;
 
-    let wishlist = await Wishlist.findOne({ user: userId });
+    // Atomic clear operation
+    const wishlist = await Wishlist.findOneAndUpdate(
+      { user: userId },
+      { products: [] },
+      { new: true }
+    ).lean();
 
     if (!wishlist) {
       return res.status(404).json({
@@ -453,9 +408,6 @@ export const clearWishlist = async (req, res) => {
         message: 'Wishlist not found',
       });
     }
-
-    wishlist.products = [];
-    await wishlist.save();
 
     res.status(200).json({
       success: true,
@@ -471,5 +423,3 @@ export const clearWishlist = async (req, res) => {
     });
   }
 };
-
-
