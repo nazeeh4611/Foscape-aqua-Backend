@@ -19,7 +19,44 @@ const getCartWithLean = async (userId) => {
     .lean();
 };
 
+export const getCart = async (req, res) => {
+  try {
+    const userId = req.user._id;
 
+    let cart = await Cart.findOne({ user: userId })
+      .populate(CART_POPULATE)
+      .lean();
+
+    if (!cart) {
+      cart = await Cart.create({ user: userId, items: [] });
+    }
+
+    const validItems = cart.items.filter(item => 
+      item.product && item.product.status === 'Active'
+    );
+
+    if (validItems.length !== cart.items.length) {
+      await Cart.findOneAndUpdate(
+        { user: userId },
+        { items: validItems },
+        { new: true }
+      );
+      cart.items = validItems;
+    }
+
+    res.status(200).json({
+      success: true,
+      cart,
+    });
+  } catch (error) {
+    console.error('Error fetching cart:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching cart',
+      error: error.message,
+    });
+  }
+};
 
 export const addToCart = async (req, res) => {
   try {
