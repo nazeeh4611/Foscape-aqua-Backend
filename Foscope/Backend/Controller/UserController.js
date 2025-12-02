@@ -569,7 +569,6 @@ export const getBatchHomeData = async (req, res) => {
   }
 };
 
-
 export const getHomeData = async (req, res) => {
   try {
     const cacheKey = 'home:initial-data';
@@ -584,53 +583,80 @@ export const getHomeData = async (req, res) => {
       });
     }
 
-    // Fetch only essential data for initial render - much faster!
+    // Ultra-fast parallel fetch with minimal fields and shorter timeout
     const [categories, featuredProducts] = await Promise.all([
       Category.find({ status: 'Active' })
-        .select('name description image')
+        .select('name image') // Only essential fields!
         .sort({ createdAt: -1 })
-        .limit(8)
+        .limit(6) // Reduced from 8
         .lean()
-        .maxTimeMS(3000), // Timeout after 3 seconds
+        .maxTimeMS(2000), // Reduced timeout
       
       product.find({ status: 'Active', featured: true })
-        .select('name description price discount images')
-        .limit(8)
+        .select('name price discount images') // Minimal fields
+        .limit(6) // Reduced from 8
         .sort({ createdAt: -1 })
         .lean()
-        .maxTimeMS(3000)
+        .maxTimeMS(2000)
     ]);
 
-    // Return immediately with essential data
     const homeData = {
       categories: categories || [],
-      featuredProducts: featuredProducts || [],
-      featuredPortfolios: [] // Load this separately on client
+      featuredProducts: featuredProducts || []
     };
 
-    // Cache for 5 minutes
-    await setCache(cacheKey, homeData, 300);
+    // Cache for 10 minutes (increased from 5)
+    await setCache(cacheKey, homeData, 600);
 
     res.status(200).json({
       success: true,
-      data: homeData,
-      cached: false
+      data: homeData
     });
   } catch (error) {
     console.error('Error fetching home data:', error);
-    // Return empty data instead of error to prevent blocking
     res.status(200).json({
       success: true,
       data: {
         categories: [],
-        featuredProducts: [],
-        featuredPortfolios: []
-      },
-      cached: false
+        featuredProducts: []
+      }
     });
   }
 };
 
+// Separate endpoint for category details (lazy load)
+export const getCategoryDetails = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const cacheKey = `category:details:${id}`;
+    
+    const cached = await getCache(cacheKey);
+    if (cached) {
+      return res.status(200).json({
+        success: true,
+        data: cached
+      });
+    }
+
+    const category = await Category.findById(id)
+      .select('name description image')
+      .lean()
+      .maxTimeMS(1500);
+
+    await setCache(cacheKey, category, 600);
+
+    res.status(200).json({
+      success: true,
+      data: category
+    });
+  } catch (error) {
+    console.error('Error fetching category details:', error);
+    res.status(404).json({
+      success: false,
+      message: 'Category not found'
+    });
+  }
+};
 
 export const getFeaturedPortfoliosForHome = async (req, res) => {
   try {
@@ -640,8 +666,7 @@ export const getFeaturedPortfoliosForHome = async (req, res) => {
     if (cached) {
       return res.status(200).json({
         success: true,
-        portfolios: cached,
-        cached: true
+        portfolios: cached
       });
     }
 
@@ -649,25 +674,23 @@ export const getFeaturedPortfoliosForHome = async (req, res) => {
       featured: true, 
       status: 'Active' 
     })
-      .select('name description category mediaUrls')
+      .select('name category mediaUrls') // Removed description for speed
       .sort({ featuredAt: -1 })
-      .limit(6)
+      .limit(4) // Reduced from 6
       .lean()
-      .maxTimeMS(3000);
+      .maxTimeMS(2000);
 
-    await setCache(cacheKey, featuredPortfolios, 600);
+    await setCache(cacheKey, featuredPortfolios, 900); // 15 min cache
 
     res.status(200).json({
       success: true,
-      portfolios: featuredPortfolios || [],
-      cached: false
+      portfolios: featuredPortfolios || []
     });
   } catch (error) {
     console.error('Error fetching featured portfolios:', error);
     res.status(200).json({
       success: true,
-      portfolios: [],
-      cached: false
+      portfolios: []
     });
   }
 };

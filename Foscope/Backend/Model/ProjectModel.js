@@ -72,12 +72,13 @@ const portfolioSchema = new mongoose.Schema({
   }, {
     timestamps: true
   });
-  
-  portfolioSchema.index({ name: 'text', description: 'text' });
-  portfolioSchema.index({ category: 1, status: 1 });
-  portfolioSchema.index({ createdAt: -1 });
-  portfolioSchema.index({ featured: 1,status:1, featuredAt: -1 }); 
+
+portfolioSchema.index({ status: 1, featured: 1, featuredAt: -1 }); 
+portfolioSchema.index({ category: 1, status: 1 });
+portfolioSchema.index({ createdAt: -1 }); 
+portfolioSchema.index({ name: 'text', description: 'text' }); 
+
+portfolioSchema.index({ featured: 1, status: 1, _id: 1, name: 1, category: 1, mediaUrls: 1 });
 
 const Portfolio = mongoose.model('Portfolio', portfolioSchema);
-
-export default Portfolio
+export default Portfolio;

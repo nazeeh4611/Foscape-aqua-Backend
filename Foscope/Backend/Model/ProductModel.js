@@ -13,6 +13,12 @@ const productSchema = new mongoose.Schema(
       required: [true, "Price is required"],
       min: [0, "Price cannot be negative"],
     },
+    discount: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 100
+    },
     description: {
       type: String,
       required: [true, "Description is required"],
@@ -137,14 +143,20 @@ const productSchema = new mongoose.Schema(
   }
 );
 
-// Indexes
-productSchema.index({ name: "text", description: "text" });
-productSchema.index({ category: 1, status: 1 });
-productSchema.index({ sku: 1 });
-productSchema.index({ status: 1, featured: 1, createdAt: -1 });
+// ✅ OPTIMIZED INDEXES - ORDER MATTERS!
+// Most selective index first
+productSchema.index({ sku: 1 }); // Already exists ✓
+productSchema.index({ status: 1, featured: 1, createdAt: -1 }); // Already exists ✓
 
+// Additional optimized indexes
+productSchema.index({ status: 1, category: 1, createdAt: -1 }); // Combined index
+productSchema.index({ status: 1, subCategory: 1, createdAt: -1 }); // Already exists ✓
+productSchema.index({ price: 1, status: 1 }); // Already exists ✓
+productSchema.index({ name: "text", description: "text" }); // Already exists ✓
 
-// Pre-save validation based on category
+// NEW - for faster featured product queries
+productSchema.index({ featured: 1, status: 1, _id: 1 }); // Covering index
+
 productSchema.pre('save', async function(next) {
   if (this.isModified('category') || this.isNew) {
     const Category = mongoose.model('Category');
@@ -153,24 +165,19 @@ productSchema.pre('save', async function(next) {
     if (category) {
       const categoryName = category.name.toLowerCase();
       
-      // Validate based on category type
       if (categoryName.includes('fish') && !categoryName.includes('feed')) {
-        // Fish products - require fish-specific fields
         if (!this.fishSpecies) {
           return next(new Error('Fish species is required for fish products'));
         }
       } else if (categoryName.includes('equipment') || categoryName.includes('filter') || categoryName.includes('light')) {
-        // Equipment products - require brand
         if (!this.brand) {
           return next(new Error('Brand is required for equipment products'));
         }
       } else if (categoryName.includes('feed') || categoryName.includes('food')) {
-        // Feed products - require feed type
         if (!this.feedType || this.feedType === 'N/A') {
           return next(new Error('Feed type is required for fish feed products'));
         }
       } else if (categoryName.includes('service')) {
-        // Service products - require service type
         if (!this.serviceType || this.serviceType === 'N/A') {
           return next(new Error('Service type is required for service products'));
         }
@@ -179,9 +186,6 @@ productSchema.pre('save', async function(next) {
   }
   next();
 });
-productSchema.index({ status: 1, subCategory: 1, createdAt: -1 });
-productSchema.index({ status: 1, featured: 1, createdAt: -1 });
-productSchema.index({ name: 'text', description: 'text' });
-productSchema.index({ price: 1, status: 1 });
+
 const Product = mongoose.model("Product", productSchema);
 export default Product;

@@ -1,4 +1,6 @@
+// ========== OPTIMIZED CATEGORY MODEL ==========
 import mongoose from "mongoose";
+
 const categorySchema = new mongoose.Schema({
   name: {
     type: String,
@@ -23,7 +25,11 @@ const categorySchema = new mongoose.Schema({
 }, {
   timestamps: true
 });
-categorySchema.index({ status: 1, createdAt: -1 });
+
+// ✅ CRITICAL INDEXES FOR PERFORMANCE
+categorySchema.index({ status: 1, createdAt: -1 }); // Already exists ✓
+categorySchema.index({ status: 1, name: 1 }); // NEW - for name sorting
+categorySchema.index({ _id: 1, status: 1 }); // NEW - for quick lookups
 
 categorySchema.set('toJSON', {
   transform: function(doc, ret) {
@@ -34,5 +40,4 @@ categorySchema.set('toJSON', {
 });
 
 const Category = mongoose.model('Category', categorySchema);
-
-export default Category
+export default Category;
