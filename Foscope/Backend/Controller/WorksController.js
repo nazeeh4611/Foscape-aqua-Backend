@@ -3,7 +3,6 @@ import Portfolio from '../Model/ProjectModel.js';
 import { getCache, setCache, deleteCache } from "../Utils/Redis.js";
 
 export const getFeaturedPortfolios = async (req, res) => {
-  console.log("first")
   try {
     console.log("🔍 Fetching featured portfolios...");
     const cacheKey = 'portfolios:featured';
@@ -21,7 +20,7 @@ export const getFeaturedPortfolios = async (req, res) => {
     }
     
     console.log("❌ Cache MISS - Fetching from database");
-
+    
     // Query database with proper error handling
     const portfolios = await Portfolio.find({
       featured: true,
@@ -32,9 +31,9 @@ export const getFeaturedPortfolios = async (req, res) => {
     .limit(6)
     .lean()
     .exec();
-
+    
     console.log(`📊 Found ${portfolios.length} featured portfolios`);
-
+    
     // If no portfolios found, return empty array instead of 404
     if (!portfolios || portfolios.length === 0) {
       console.log("⚠️ No featured portfolios found");
@@ -45,11 +44,11 @@ export const getFeaturedPortfolios = async (req, res) => {
         message: 'No featured portfolios available'
       });
     }
-
+    
     // Cache the results
     await setCache(cacheKey, portfolios, 900);
     console.log("💾 Data cached successfully");
-
+    
     return res.status(200).json({
       success: true,
       count: portfolios.length,
@@ -93,9 +92,9 @@ export const getAllPortfolios = async (req, res) => {
     } else {
       query.status = 'Active';
     }
-
+    
     const skip = (parseInt(page) - 1) * parseInt(limit);
-
+    
     const [portfolios, totalCount] = await Promise.all([
       Portfolio.find(query)
         .sort({ createdAt: -1 })
@@ -105,7 +104,7 @@ export const getAllPortfolios = async (req, res) => {
         .exec(),
       Portfolio.countDocuments(query)
     ]);
-
+    
     const result = {
       count: portfolios.length,
       totalCount,
@@ -113,10 +112,10 @@ export const getAllPortfolios = async (req, res) => {
       currentPage: parseInt(page),
       portfolios
     };
-
+    
     // Cache for 5 minutes
     await setCache(cacheKey, result, 300);
-
+    
     res.status(200).json({
       success: true,
       ...result,
@@ -135,14 +134,14 @@ export const getAllPortfolios = async (req, res) => {
 export const getPortfolioById = async (req, res) => {
   try {
     const { id } = req.params;
-
+    
     if (!id || id === 'undefined') {
       return res.status(400).json({
         success: false,
         message: 'Invalid portfolio ID'
       });
     }
-
+    
     const cacheKey = `portfolio:${id}`;
     
     // Check cache
@@ -154,18 +153,18 @@ export const getPortfolioById = async (req, res) => {
         cached: true
       });
     }
-
+    
     const portfolio = await Portfolio.findById(id).lean().exec();
-
+    
     if (!portfolio) {
       return res.status(404).json({
         success: false,
         message: 'Portfolio not found'
       });
     }
-
+    
     await setCache(cacheKey, portfolio, 900);
-
+    
     res.status(200).json({
       success: true,
       portfolio,
