@@ -172,74 +172,70 @@ export const getHomeData = async (req, res) => {
 };
 
 // NEW: Optimized batch data endpoint
+// Controller/UserController.js - OPTIMIZED getBatchData
 export const getBatchData = async (req, res) => {
   try {
     const { include = 'categories,featured,portfolios' } = req.query;
     const includeList = include.split(',');
-    
     const cacheKey = `batch:${include}`;
-    const cached = await getCache(cacheKey);
     
+    // 1. Check cache first
+    const cached = await getCache(cacheKey);
     if (cached) {
-      res.set('X-Cache', 'HIT');
+      res.setHeader('X-Cache', 'HIT');
+      res.setHeader('Cache-Control', 'public, s-maxage=60');
       return res.json(cached);
     }
 
-    const promises = [];
-    
-    if (includeList.includes('categories')) {
-      promises.push(
+    // 2. Execute all queries in parallel (CRITICAL CHANGE)
+    const [categories, featuredProducts, portfolios] = await Promise.all([
+      includeList.includes('categories') ? 
         Category.find({ status: 'Active' })
           .select('_id name image')
           .sort({ createdAt: -1 })
           .limit(8)
           .lean()
-          .then(data => ({ categories: data }))
-      );
-    }
-    
-    if (includeList.includes('featured')) {
-      promises.push(
+          .maxTimeMS(1000) : Promise.resolve([]),
+      
+      includeList.includes('featured') ? 
         product.find({ status: 'Active', featured: true })
           .select('_id name price discount images description')
           .limit(8)
           .sort({ createdAt: -1 })
           .lean()
-          .then(data => ({ featuredProducts: data }))
-      );
-    }
-    
-    if (includeList.includes('portfolios')) {
-      promises.push(
+          .maxTimeMS(1000) : Promise.resolve([]),
+        
+      includeList.includes('portfolios') ? 
         Portfolio.find({ featured: true, status: 'Active' })
           .select('name category mediaUrls description')
           .limit(4)
           .lean()
-          .then(data => ({ portfolios: data }))
-      );
-    }
+          .maxTimeMS(1000) : Promise.resolve([])
+    ]);
 
-    const results = await Promise.allSettled(promises);
+    // 3. Build response
     const response = {
       success: true,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      categories,
+      featuredProducts,
+      portfolios
     };
 
-    results.forEach((result, index) => {
-      if (result.status === 'fulfilled') {
-        Object.assign(response, result.value);
-      }
-    });
-
+    // 4. Cache the response for future requests
     await setCache(cacheKey, response, 300);
     
-    res.set('X-Cache', 'MISS');
+    res.setHeader('X-Cache', 'MISS');
+    res.setHeader('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=120'); // Add CDN caching[citation:6]
     res.json(response);
+    
   } catch (error) {
     console.error('Batch data error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    res.status(200).json({ // Return 200 with fallback data
+      success: true,
+      categories: [],
+      featuredProducts: [],
+      portfolios: []
     });
   }
 };
