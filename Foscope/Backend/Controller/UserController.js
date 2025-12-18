@@ -1,16 +1,13 @@
-// Controller/UserController.js
 import Category from "../Model/CategoryModel.js";
 import SubCategory from "../Model/SubCategoryModel.js";
 import product from '../Model/ProductModel.js';
 import Admin from "../Model/AdminModel.js";
-import { getCache, setCache, deleteCache, deleteCachePattern } from "../Utils/Redis.js";
+import { getCache, setCache } from "../Utils/Redis.js";
 import Portfolio from "../Model/ProjectModel.js";
 
-// Optimized cache key generator
 const generateCacheKey = (prefix, params = {}) => {
   if (!params || Object.keys(params).length === 0) return prefix;
   
-  // Sort params for consistent cache keys
   const sortedParams = Object.keys(params)
     .sort()
     .filter(key => params[key] !== undefined && params[key] !== null && params[key] !== '')
@@ -20,7 +17,6 @@ const generateCacheKey = (prefix, params = {}) => {
   return sortedParams ? `${prefix}:${sortedParams}` : prefix;
 };
 
-// Optimized: Use connection pooling and query optimization
 export const getCategoryDetails = async (req, res) => {
   try {
     const { id } = req.params;
@@ -38,7 +34,7 @@ export const getCategoryDetails = async (req, res) => {
     const category = await Category.findById(id)
       .select('name description image')
       .lean()
-      .maxTimeMS(500); // Reduced timeout
+      .maxTimeMS(500);
 
     if (!category) {
       return res.status(200).json({
@@ -103,136 +99,86 @@ export const AllCategories = async (req, res) => {
   }
 };
 
-// OPTIMIZED: Combined home data with batching
-export const getHomeData = async (req, res) => {
-  try {
-    const cacheKey = 'home:initial-data';
-    
-    const cached = await getCache(cacheKey);
-    if (cached) {
-      res.set('X-Cache', 'HIT');
-      res.set('Cache-Control', 'public, max-age=300');
-      return res.status(200).json({
-        success: true,
-        data: cached,
-        cached: true
-      });
-    }
-
-    // Use Promise.all for parallel execution
-    const [categories, featuredProducts, portfolios] = await Promise.all([
-      Category.find({ status: 'Active' })
-        .select('_id name image')
-        .sort({ createdAt: -1 })
-        .limit(6)
-        .lean()
-        .maxTimeMS(1000),
-      
-      product.find({ status: 'Active', featured: true })
-        .select('_id name price discount images description')
-        .limit(6)
-        .sort({ createdAt: -1 })
-        .lean()
-        .maxTimeMS(1000),
-        
-      Portfolio.find({ featured: true, status: 'Active' })
-        .select('name category mediaUrls description')
-        .sort({ featuredAt: -1 })
-        .limit(3)
-        .lean()
-        .maxTimeMS(1000)
-    ]);
-
-    const homeData = {
-      categories: categories || [],
-      featuredProducts: featuredProducts || [],
-      portfolios: portfolios || []
-    };
-
-    await setCache(cacheKey, homeData, 300);
-
-    res.set('X-Cache', 'MISS');
-    res.set('Cache-Control', 'public, max-age=300');
-    res.status(200).json({
-      success: true,
-      data: homeData,
-      cached: false
-    });
-  } catch (error) {
-    console.error('Home data error:', error);
-    res.status(200).json({
-      success: true,
-      data: {
-        categories: [],
-        featuredProducts: [],
-        portfolios: []
-      }
-    });
-  }
-};
-
-// NEW: Optimized batch data endpoint
-// Controller/UserController.js - OPTIMIZED getBatchData
 export const getBatchData = async (req, res) => {
   try {
     const { include = 'categories,featured,portfolios' } = req.query;
     const includeList = include.split(',');
-    const cacheKey = `batch:${include}`;
     
-    // 1. Check cache first
+    const cacheKey = `batch:${include}`;
     const cached = await getCache(cacheKey);
+    
     if (cached) {
-      res.setHeader('X-Cache', 'HIT');
-      res.setHeader('Cache-Control', 'public, s-maxage=60');
+      res.set('X-Cache', 'HIT');
+      res.set('Cache-Control', 'public, max-age=300');
       return res.json(cached);
     }
 
-    // 2. Execute all queries in parallel (CRITICAL CHANGE)
-    const [categories, featuredProducts, portfolios] = await Promise.all([
-      includeList.includes('categories') ? 
+    const promises = [];
+    
+    if (includeList.includes('categories')) {
+      promises.push(
         Category.find({ status: 'Active' })
-          .select('_id name image')
+          .select('_id name image description')
           .sort({ createdAt: -1 })
           .limit(8)
           .lean()
-          .maxTimeMS(1000) : Promise.resolve([]),
-      
-      includeList.includes('featured') ? 
+          .maxTimeMS(2000)
+          .then(data => ({ categories: data }))
+          .catch(() => ({ categories: [] }))
+      );
+    }
+    
+    if (includeList.includes('featured')) {
+      promises.push(
         product.find({ status: 'Active', featured: true })
           .select('_id name price discount images description')
-          .limit(8)
+          .limit(12)
           .sort({ createdAt: -1 })
           .lean()
-          .maxTimeMS(1000) : Promise.resolve([]),
-        
-      includeList.includes('portfolios') ? 
+          .maxTimeMS(2000)
+          .then(data => ({ featuredProducts: data }))
+          .catch(() => ({ featuredProducts: [] }))
+      );
+    }
+    
+    if (includeList.includes('portfolios')) {
+      promises.push(
         Portfolio.find({ featured: true, status: 'Active' })
-          .select('name category mediaUrls description')
-          .limit(4)
+          .select('name category mediaUrls description location completionDate client duration')
+          .sort({ featuredAt: -1 })
+          .limit(6)
           .lean()
-          .maxTimeMS(1000) : Promise.resolve([])
-    ]);
+          .maxTimeMS(2000)
+          .then(data => ({ portfolios: data }))
+          .catch(() => ({ portfolios: [] }))
+      );
+    }
 
-    // 3. Build response
+    const results = await Promise.allSettled(promises);
     const response = {
       success: true,
-      timestamp: Date.now(),
-      categories,
-      featuredProducts,
-      portfolios
+      timestamp: Date.now()
     };
 
-    // 4. Cache the response for future requests
+    results.forEach(result => {
+      if (result.status === 'fulfilled') {
+        Object.assign(response, result.value);
+      }
+    });
+
+    if (!response.categories) response.categories = [];
+    if (!response.featuredProducts) response.featuredProducts = [];
+    if (!response.portfolios) response.portfolios = [];
+
     await setCache(cacheKey, response, 300);
     
-    res.setHeader('X-Cache', 'MISS');
-    res.setHeader('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=120'); // Add CDN caching[citation:6]
+    res.set('X-Cache', 'MISS');
+    res.set('Cache-Control', 'public, max-age=300');
     res.json(response);
-    
   } catch (error) {
     console.error('Batch data error:', error);
-    res.status(200).json({ // Return 200 with fallback data
-      success: true,
+    res.status(200).json({ 
+      success: true, 
       categories: [],
       featuredProducts: [],
       portfolios: []
@@ -256,11 +202,11 @@ export const getFeaturedPortfoliosForHome = async (req, res) => {
       featured: true, 
       status: 'Active' 
     })
-      .select('name category mediaUrls description')
+      .select('name category mediaUrls description location completionDate client duration')
       .sort({ featuredAt: -1 })
       .limit(6)
       .lean()
-      .maxTimeMS(1000);
+      .maxTimeMS(2000);
 
     await setCache(cacheKey, featuredPortfolios, 300);
 
@@ -306,7 +252,7 @@ export const getSubCategoriesByCategory = async (req, res) => {
     .select('name description image categoryId')
     .populate('categoryId', 'name image description')
     .lean()
-    .maxTimeMS(1000);
+    .maxTimeMS(2000);
 
     if (!subcategories || subcategories.length === 0) {
       return res.status(200).json({
@@ -334,7 +280,6 @@ export const getSubCategoriesByCategory = async (req, res) => {
   }
 };
 
-// OPTIMIZED: Products with pagination and better filtering
 export const getAllProductsUser = async (req, res) => {
   try {
     const {
@@ -380,7 +325,6 @@ export const getAllProductsUser = async (req, res) => {
     }
 
     if (search && search.trim() !== '') {
-      // Use regex for partial match instead of text search for better performance
       filter.name = { $regex: search.trim(), $options: 'i' };
     }
 
@@ -391,7 +335,6 @@ export const getAllProductsUser = async (req, res) => {
     }
 
     const sort = {};
-    // Only allow sorting by specific fields
     const allowedSortFields = ['createdAt', 'price', 'name', 'discount'];
     const sortField = allowedSortFields.includes(sortBy) ? sortBy : 'createdAt';
     sort[sortField] = sortOrder === 'asc' ? 1 : -1;
@@ -406,12 +349,13 @@ export const getAllProductsUser = async (req, res) => {
         .skip(skip)
         .limit(limitNum)
         .lean()
-        .maxTimeMS(2000),
+        .maxTimeMS(3000),
       subCategoryId && subCategoryId !== 'undefined' ? 
         SubCategory.findById(subCategoryId)
           .select('name categoryId')
           .populate('categoryId', 'name _id')
-          .lean() 
+          .lean()
+          .maxTimeMS(1000)
         : Promise.resolve(null)
     ]);
 
@@ -477,14 +421,14 @@ export const getCategoriesWithSubcategories = async (req, res) => {
               }
             },
             { $project: { name: 1, description: 1, image: 1 } },
-            { $limit: 10 } // Limit subcategories per category
+            { $limit: 10 }
           ],
           as: 'subcategories'
         }
       },
       { $project: { name: 1, description: 1, image: 1, subcategories: 1 } },
-      { $limit: 20 } // Limit total categories
-    ]).maxTimeMS(2000);
+      { $limit: 20 }
+    ]).maxTimeMS(3000);
 
     await setCache(cacheKey, categoriesWithSubcategories, 600);
 
@@ -522,7 +466,8 @@ export const getRelatedProducts = async (req, res) => {
 
     const currentProduct = await product.findById(productId)
       .select('subCategory category')
-      .lean();
+      .lean()
+      .maxTimeMS(1000);
 
     if (!currentProduct) {
       return res.status(404).json({
@@ -544,7 +489,7 @@ export const getRelatedProducts = async (req, res) => {
       .populate('subCategory', 'name')
       .limit(parseInt(limit))
       .lean()
-      .maxTimeMS(1000);
+      .maxTimeMS(2000);
 
     const responseData = {
       success: true,
@@ -568,7 +513,7 @@ export const getRelatedProducts = async (req, res) => {
 
 export const getFeaturedProducts = async (req, res) => {
   try {
-    const { limit = 8 } = req.query;
+    const { limit = 12 } = req.query;
     const cacheKey = `products:featured:${limit}`;
 
     const cached = await getCache(cacheKey);
@@ -586,10 +531,10 @@ export const getFeaturedProducts = async (req, res) => {
       featured: true,
     })
     .select('name description price discount images')
-    .limit(Math.min(parseInt(limit), 20)) // Cap at 20
+    .limit(Math.min(parseInt(limit), 20))
     .sort({ createdAt: -1 })
     .lean()
-    .maxTimeMS(1000);
+    .maxTimeMS(2000);
 
     await setCache(cacheKey, featuredProducts, 300);
 
@@ -633,14 +578,11 @@ export const searchProducts = async (req, res) => {
 
     const products = await product.find({
       status: 'Active',
-      $text: { $search: query }
-    }, {
-      score: { $meta: 'textScore' }
+      name: { $regex: query, $options: 'i' }
     })
       .select('name price discount images')
       .populate('category', 'name')
       .populate('subCategory', 'name')
-      .sort({ score: { $meta: 'textScore' } })
       .limit(Math.min(parseInt(limit), 50))
       .lean()
       .maxTimeMS(2000);
@@ -652,7 +594,7 @@ export const searchProducts = async (req, res) => {
       cached: false
     };
 
-    await setCache(cacheKey, responseData, 180); // 3 minutes for search
+    await setCache(cacheKey, responseData, 180);
 
     res.set('X-Cache', 'MISS');
     res.status(200).json(responseData);
@@ -686,7 +628,7 @@ export const getProductByIdUser = async (req, res) => {
       .populate('category', 'name description image')
       .populate('subCategory', 'name description image')
       .lean()
-      .maxTimeMS(1000);
+      .maxTimeMS(2000);
 
     if (!foundProduct) {
       return res.status(404).json({
@@ -751,29 +693,4 @@ export const getContactNumber = async (req, res) => {
       cached: true 
     });
   }
-};
-
-// Cache clearing utilities
-export const clearProductCache = async (productId = null) => {
-  if (productId) {
-    await deleteCache(`product:id=${productId}`);
-  }
-  await deleteCachePattern('products:*');
-  await deleteCachePattern('batch:*');
-};
-
-export const clearSubCategoryCache = async (categoryId = null) => {
-  if (categoryId) {
-    await deleteCache(`subcategories:categoryId=${categoryId}`);
-  }
-  await deleteCachePattern('subcategories:*');
-  await deleteCachePattern('categories:*');
-  await deleteCachePattern('batch:*');
-};
-
-export const clearCategoryCache = async () => {
-  await deleteCachePattern('categories:*');
-  await deleteCachePattern('subcategories:*');
-  await deleteCachePattern('home:*');
-  await deleteCachePattern('batch:*');
 };

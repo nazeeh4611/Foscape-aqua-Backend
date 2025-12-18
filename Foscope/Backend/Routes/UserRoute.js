@@ -10,7 +10,7 @@ import {
   AllCategories, getSubCategoriesByCategory, getRelatedProducts,
   getFeaturedProducts, getProductByIdUser, getAllProductsUser,
   searchProducts, getCategoriesWithSubcategories, getContactNumber,
-  getHomeData, getFeaturedPortfoliosForHome, getCategoryDetails,
+ getFeaturedPortfoliosForHome, getCategoryDetails,
   getBatchData
 } from "../Controller/UserController.js";
 import { 
@@ -111,7 +111,7 @@ router.get('/portfolio/:id', cacheMiddleware(600), getPortfolioById);
 router.post('/portfolio', createPortfolioItem);
 
 // Home data routes with caching
-router.get('/home-data', cacheMiddleware(300), getHomeData);
+// router.get('/home-data', cacheMiddleware(300), getHomeData);
 router.get('/featured-portfolios', cacheMiddleware(300), getFeaturedPortfoliosForHome);
 
 // Health check endpoint
