@@ -56,7 +56,7 @@ router.get("/get-user", authenticateUser, getUser);
 router.get('/category', cacheMiddleware(300), AllCategories);
 router.get('/category/:id', cacheMiddleware(600), getCategoryDetails);
 router.get('/subcategory/:categoryId', cacheMiddleware(300), getSubCategoriesByCategory);
-router.get('/categories-with-subcategories', cacheMiddleware(600), getCategoriesWithSubcategories);
+router.get('/categories/with-subcategories', cacheMiddleware(600), getCategoriesWithSubcategories);
 
 // Product routes with caching
 router.get('/products/featured', cacheMiddleware(300), getFeaturedProducts);

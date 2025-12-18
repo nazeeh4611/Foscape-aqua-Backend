@@ -403,32 +403,41 @@ export const getCategoriesWithSubcategories = async (req, res) => {
       });
     }
 
-    const categoriesWithSubcategories = await Category.aggregate([
-      { $match: { status: 'Active' } },
-      {
-        $lookup: {
-          from: 'subcategories',
-          let: { categoryId: '$_id' },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ['$categoryId', '$$categoryId'] },
-                    { $eq: ['$status', 'Active'] }
-                  ]
-                }
-              }
-            },
-            { $project: { name: 1, description: 1, image: 1 } },
-            { $limit: 10 }
-          ],
-          as: 'subcategories'
-        }
-      },
-      { $project: { name: 1, description: 1, image: 1, subcategories: 1 } },
-      { $limit: 20 }
-    ]).maxTimeMS(3000);
+    // First, get all active categories
+    const categories = await Category.find({ status: 'Active' })
+      .select('_id name description image')
+      .lean()
+      .maxTimeMS(2000);
+
+    if (!categories || categories.length === 0) {
+      await setCache(cacheKey, [], 600);
+      return res.status(200).json({
+        success: true,
+        categories: [],
+        cached: false
+      });
+    }
+
+    // Then get subcategories for each category
+    const categoriesWithSubcategories = await Promise.all(
+      categories.map(async (category) => {
+        const subcategories = await SubCategory.find({
+          categoryId: category._id,
+          status: 'Active'
+        })
+        .select('_id name description image')
+        .lean()
+        .maxTimeMS(1000);
+
+        return {
+          _id: category._id,
+          name: category.name,
+          description: category.description,
+          image: category.image,
+          subcategories: subcategories || []
+        };
+      })
+    );
 
     await setCache(cacheKey, categoriesWithSubcategories, 600);
 
@@ -440,11 +449,31 @@ export const getCategoriesWithSubcategories = async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching categories with subcategories:', error);
-    res.status(200).json({
-      success: true,
-      categories: [],
-      cached: true
-    });
+    
+    // Try to get categories without subcategories as fallback
+    try {
+      const categories = await Category.find({ status: 'Active' })
+        .select('_id name description image')
+        .lean()
+        .maxTimeMS(1000);
+
+      const categoriesWithEmptySubs = categories.map(cat => ({
+        ...cat,
+        subcategories: []
+      }));
+
+      res.status(200).json({
+        success: true,
+        categories: categoriesWithEmptySubs || [],
+        cached: true
+      });
+    } catch (fallbackError) {
+      res.status(200).json({
+        success: true,
+        categories: [],
+        cached: true
+      });
+    }
   }
 };
 
