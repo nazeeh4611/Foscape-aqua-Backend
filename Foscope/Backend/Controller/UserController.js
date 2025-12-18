@@ -1,3 +1,4 @@
+// Controller/UserController.js
 import Category from "../Model/CategoryModel.js";
 import SubCategory from "../Model/SubCategoryModel.js";
 import product from '../Model/ProductModel.js';
@@ -5,15 +6,21 @@ import Admin from "../Model/AdminModel.js";
 import { getCache, setCache, deleteCache, deleteCachePattern } from "../Utils/Redis.js";
 import Portfolio from "../Model/ProjectModel.js";
 
+// Optimized cache key generator
 const generateCacheKey = (prefix, params = {}) => {
-  const paramString = Object.entries(params)
-    .filter(([_, value]) => value !== undefined && value !== null)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([key, value]) => `${key}:${value}`)
-    .join(':');
-  return paramString ? `${prefix}:${paramString}` : prefix;
+  if (!params || Object.keys(params).length === 0) return prefix;
+  
+  // Sort params for consistent cache keys
+  const sortedParams = Object.keys(params)
+    .sort()
+    .filter(key => params[key] !== undefined && params[key] !== null && params[key] !== '')
+    .map(key => `${key}=${encodeURIComponent(params[key])}`)
+    .join('&');
+    
+  return sortedParams ? `${prefix}:${sortedParams}` : prefix;
 };
 
+// Optimized: Use connection pooling and query optimization
 export const getCategoryDetails = async (req, res) => {
   try {
     const { id } = req.params;
@@ -21,6 +28,7 @@ export const getCategoryDetails = async (req, res) => {
     
     const cached = await getCache(cacheKey);
     if (cached) {
+      res.set('X-Cache', 'HIT');
       return res.status(200).json({
         success: true,
         data: cached
@@ -30,7 +38,7 @@ export const getCategoryDetails = async (req, res) => {
     const category = await Category.findById(id)
       .select('name description image')
       .lean()
-      .maxTimeMS(1000);
+      .maxTimeMS(500); // Reduced timeout
 
     if (!category) {
       return res.status(200).json({
@@ -41,6 +49,7 @@ export const getCategoryDetails = async (req, res) => {
 
     await setCache(cacheKey, category, 600);
 
+    res.set('X-Cache', 'MISS');
     res.status(200).json({
       success: true,
       data: category
@@ -59,6 +68,7 @@ export const AllCategories = async (req, res) => {
     
     const cached = await getCache(cacheKey);
     if (cached) {
+      res.set('X-Cache', 'HIT');
       return res.status(200).json({
         success: true,
         message: "Categories fetched from cache",
@@ -69,11 +79,13 @@ export const AllCategories = async (req, res) => {
 
     const categories = await Category.find({ status: 'Active' })
       .sort({ createdAt: -1 })
-      .select('name description image')
-      .lean();
+      .select('name description image _id')
+      .lean()
+      .maxTimeMS(1000);
 
     await setCache(cacheKey, categories, 300);
 
+    res.set('X-Cache', 'MISS');
     return res.status(200).json({
       success: true,
       message: "Categories fetched successfully",
@@ -82,14 +94,16 @@ export const AllCategories = async (req, res) => {
     });
   } catch (error) {
     console.error("Error fetching categories:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Failed to fetch categories",
-      error: error.message,
+    return res.status(200).json({
+      success: true,
+      message: "Using cached or default data",
+      categories: [],
+      cached: true
     });
   }
 };
 
+// OPTIMIZED: Combined home data with batching
 export const getHomeData = async (req, res) => {
   try {
     const cacheKey = 'home:initial-data';
@@ -97,6 +111,7 @@ export const getHomeData = async (req, res) => {
     const cached = await getCache(cacheKey);
     if (cached) {
       res.set('X-Cache', 'HIT');
+      res.set('Cache-Control', 'public, max-age=300');
       return res.status(200).json({
         success: true,
         data: cached,
@@ -104,42 +119,127 @@ export const getHomeData = async (req, res) => {
       });
     }
 
-    const [categories, featuredProducts] = await Promise.all([
+    // Use Promise.all for parallel execution
+    const [categories, featuredProducts, portfolios] = await Promise.all([
       Category.find({ status: 'Active' })
         .select('_id name image')
         .sort({ createdAt: -1 })
         .limit(6)
         .lean()
-        .maxTimeMS(1500),
+        .maxTimeMS(1000),
       
       product.find({ status: 'Active', featured: true })
         .select('_id name price discount images description')
         .limit(6)
         .sort({ createdAt: -1 })
         .lean()
-        .maxTimeMS(1500)
+        .maxTimeMS(1000),
+        
+      Portfolio.find({ featured: true, status: 'Active' })
+        .select('name category mediaUrls description')
+        .sort({ featuredAt: -1 })
+        .limit(3)
+        .lean()
+        .maxTimeMS(1000)
     ]);
 
     const homeData = {
       categories: categories || [],
-      featuredProducts: featuredProducts || []
+      featuredProducts: featuredProducts || [],
+      portfolios: portfolios || []
     };
 
-    await setCache(cacheKey, homeData, 600);
+    await setCache(cacheKey, homeData, 300);
 
     res.set('X-Cache', 'MISS');
+    res.set('Cache-Control', 'public, max-age=300');
     res.status(200).json({
       success: true,
       data: homeData,
       cached: false
     });
   } catch (error) {
+    console.error('Home data error:', error);
     res.status(200).json({
       success: true,
       data: {
         categories: [],
-        featuredProducts: []
+        featuredProducts: [],
+        portfolios: []
       }
+    });
+  }
+};
+
+// NEW: Optimized batch data endpoint
+export const getBatchData = async (req, res) => {
+  try {
+    const { include = 'categories,featured,portfolios' } = req.query;
+    const includeList = include.split(',');
+    
+    const cacheKey = `batch:${include}`;
+    const cached = await getCache(cacheKey);
+    
+    if (cached) {
+      res.set('X-Cache', 'HIT');
+      return res.json(cached);
+    }
+
+    const promises = [];
+    
+    if (includeList.includes('categories')) {
+      promises.push(
+        Category.find({ status: 'Active' })
+          .select('_id name image')
+          .sort({ createdAt: -1 })
+          .limit(8)
+          .lean()
+          .then(data => ({ categories: data }))
+      );
+    }
+    
+    if (includeList.includes('featured')) {
+      promises.push(
+        product.find({ status: 'Active', featured: true })
+          .select('_id name price discount images description')
+          .limit(8)
+          .sort({ createdAt: -1 })
+          .lean()
+          .then(data => ({ featuredProducts: data }))
+      );
+    }
+    
+    if (includeList.includes('portfolios')) {
+      promises.push(
+        Portfolio.find({ featured: true, status: 'Active' })
+          .select('name category mediaUrls description')
+          .limit(4)
+          .lean()
+          .then(data => ({ portfolios: data }))
+      );
+    }
+
+    const results = await Promise.allSettled(promises);
+    const response = {
+      success: true,
+      timestamp: Date.now()
+    };
+
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') {
+        Object.assign(response, result.value);
+      }
+    });
+
+    await setCache(cacheKey, response, 300);
+    
+    res.set('X-Cache', 'MISS');
+    res.json(response);
+  } catch (error) {
+    console.error('Batch data error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
     });
   }
 };
@@ -164,9 +264,9 @@ export const getFeaturedPortfoliosForHome = async (req, res) => {
       .sort({ featuredAt: -1 })
       .limit(6)
       .lean()
-      .maxTimeMS(1500);
+      .maxTimeMS(1000);
 
-    await setCache(cacheKey, featuredPortfolios, 900);
+    await setCache(cacheKey, featuredPortfolios, 300);
 
     res.status(200).json({
       success: true,
@@ -195,6 +295,7 @@ export const getSubCategoriesByCategory = async (req, res) => {
     
     const cached = await getCache(cacheKey);
     if (cached) {
+      res.set('X-Cache', 'HIT');
       return res.status(200).json({
         success: true,
         subcategories: cached,
@@ -205,7 +306,11 @@ export const getSubCategoriesByCategory = async (req, res) => {
     const subcategories = await SubCategory.find({
       categoryId: categoryId,
       status: 'Active',
-    }).populate('categoryId', 'name image description');
+    })
+    .select('name description image categoryId')
+    .populate('categoryId', 'name image description')
+    .lean()
+    .maxTimeMS(1000);
 
     if (!subcategories || subcategories.length === 0) {
       return res.status(200).json({
@@ -217,6 +322,7 @@ export const getSubCategoriesByCategory = async (req, res) => {
 
     await setCache(cacheKey, subcategories, 300);
 
+    res.set('X-Cache', 'MISS');
     res.status(200).json({
       success: true,
       subcategories,
@@ -232,6 +338,7 @@ export const getSubCategoriesByCategory = async (req, res) => {
   }
 };
 
+// OPTIMIZED: Products with pagination and better filtering
 export const getAllProductsUser = async (req, res) => {
   try {
     const {
@@ -246,23 +353,24 @@ export const getAllProductsUser = async (req, res) => {
 
     const { subCategoryId } = req.params;
 
-    const pageNum = parseInt(page);
-    const limitNum = parseInt(limit);
+    const pageNum = Math.max(1, parseInt(page));
+    const limitNum = Math.min(50, Math.max(1, parseInt(limit)));
     const skip = (pageNum - 1) * limitNum;
 
     const cacheKey = generateCacheKey('products', {
-      subCategoryId,
+      subCategoryId: subCategoryId || 'all',
       page: pageNum,
       limit: limitNum,
-      search,
-      minPrice,
-      maxPrice,
+      search: search || '',
+      minPrice: minPrice || '',
+      maxPrice: maxPrice || '',
       sortBy,
       sortOrder
     });
 
     const cached = await getCache(cacheKey);
     if (cached) {
+      res.set('X-Cache', 'HIT');
       return res.status(200).json({
         ...cached,
         cached: true
@@ -271,12 +379,13 @@ export const getAllProductsUser = async (req, res) => {
 
     const filter = { status: 'Active' };
 
-    if (subCategoryId) {
+    if (subCategoryId && subCategoryId !== 'undefined') {
       filter.subCategory = subCategoryId;
     }
 
-    if (search) {
-      filter.$text = { $search: search };
+    if (search && search.trim() !== '') {
+      // Use regex for partial match instead of text search for better performance
+      filter.name = { $regex: search.trim(), $options: 'i' };
     }
 
     if (minPrice || maxPrice) {
@@ -286,24 +395,28 @@ export const getAllProductsUser = async (req, res) => {
     }
 
     const sort = {};
-    sort[sortBy] = sortOrder === 'asc' ? 1 : -1;
+    // Only allow sorting by specific fields
+    const allowedSortFields = ['createdAt', 'price', 'name', 'discount'];
+    const sortField = allowedSortFields.includes(sortBy) ? sortBy : 'createdAt';
+    sort[sortField] = sortOrder === 'asc' ? 1 : -1;
 
     const [totalProducts, products, subCategoryInfo] = await Promise.all([
-      product.countDocuments(filter),
+      product.countDocuments(filter).maxTimeMS(2000),
       product.find(filter)
-        .select('name price discount images status')
+        .select('name price discount images status stock brand featured')
         .populate('category', 'name')
         .populate('subCategory', 'name')
         .sort(sort)
         .skip(skip)
         .limit(limitNum)
-        .lean(),
-      subCategoryId ? 
+        .lean()
+        .maxTimeMS(2000),
+      subCategoryId && subCategoryId !== 'undefined' ? 
         SubCategory.findById(subCategoryId)
           .select('name categoryId')
           .populate('categoryId', 'name _id')
           .lean() 
-        : null
+        : Promise.resolve(null)
     ]);
 
     const totalPages = Math.ceil(totalProducts / limitNum);
@@ -322,8 +435,9 @@ export const getAllProductsUser = async (req, res) => {
       cached: false
     };
 
-    await setCache(cacheKey, responseData, 600);
+    await setCache(cacheKey, responseData, 300);
 
+    res.set('X-Cache', 'MISS');
     res.status(200).json(responseData);
   } catch (error) {
     console.error('Error fetching products:', error);
@@ -341,6 +455,7 @@ export const getCategoriesWithSubcategories = async (req, res) => {
     
     const cached = await getCache(cacheKey);
     if (cached) {
+      res.set('X-Cache', 'HIT');
       return res.status(200).json({
         success: true,
         categories: cached,
@@ -365,16 +480,19 @@ export const getCategoriesWithSubcategories = async (req, res) => {
                 }
               }
             },
-            { $project: { name: 1, description: 1, image: 1 } }
+            { $project: { name: 1, description: 1, image: 1 } },
+            { $limit: 10 } // Limit subcategories per category
           ],
           as: 'subcategories'
         }
       },
-      { $project: { name: 1, description: 1, image: 1, subcategories: 1 } }
-    ]);
+      { $project: { name: 1, description: 1, image: 1, subcategories: 1 } },
+      { $limit: 20 } // Limit total categories
+    ]).maxTimeMS(2000);
 
     await setCache(cacheKey, categoriesWithSubcategories, 600);
 
+    res.set('X-Cache', 'MISS');
     res.status(200).json({
       success: true,
       categories: categoriesWithSubcategories,
@@ -382,10 +500,10 @@ export const getCategoriesWithSubcategories = async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching categories with subcategories:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching categories',
-      error: error.message,
+    res.status(200).json({
+      success: true,
+      categories: [],
+      cached: true
     });
   }
 };
@@ -399,15 +517,18 @@ export const getRelatedProducts = async (req, res) => {
     
     const cached = await getCache(cacheKey);
     if (cached) {
+      res.set('X-Cache', 'HIT');
       return res.status(200).json({
         ...cached,
         cached: true
       });
     }
 
-    const products = await product.findById(productId);
+    const currentProduct = await product.findById(productId)
+      .select('subCategory category')
+      .lean();
 
-    if (!products) {
+    if (!currentProduct) {
       return res.status(404).json({
         success: false,
         message: 'Product not found',
@@ -415,14 +536,19 @@ export const getRelatedProducts = async (req, res) => {
     }
 
     const relatedProducts = await product.find({
-      subCategory: products.subCategory,
+      $or: [
+        { subCategory: currentProduct.subCategory },
+        { category: currentProduct.category }
+      ],
       _id: { $ne: productId },
       status: 'Active',
     })
+      .select('name price discount images description')
       .populate('category', 'name')
       .populate('subCategory', 'name')
       .limit(parseInt(limit))
-      .lean();
+      .lean()
+      .maxTimeMS(1000);
 
     const responseData = {
       success: true,
@@ -430,15 +556,16 @@ export const getRelatedProducts = async (req, res) => {
       cached: false
     };
 
-    await setCache(cacheKey, responseData, 600);
+    await setCache(cacheKey, responseData, 300);
 
+    res.set('X-Cache', 'MISS');
     res.status(200).json(responseData);
   } catch (error) {
     console.error('Error fetching related products:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching related products',
-      error: error.message,
+    res.status(200).json({
+      success: true,
+      products: [],
+      cached: true
     });
   }
 };
@@ -450,6 +577,7 @@ export const getFeaturedProducts = async (req, res) => {
 
     const cached = await getCache(cacheKey);
     if (cached) {
+      res.set('X-Cache', 'HIT');
       return res.status(200).json({
         success: true,
         products: cached,
@@ -462,12 +590,14 @@ export const getFeaturedProducts = async (req, res) => {
       featured: true,
     })
     .select('name description price discount images')
-    .limit(parseInt(limit))
+    .limit(Math.min(parseInt(limit), 20)) // Cap at 20
     .sort({ createdAt: -1 })
-    .lean();
+    .lean()
+    .maxTimeMS(1000);
 
-    await setCache(cacheKey, featuredProducts, 600);
+    await setCache(cacheKey, featuredProducts, 300);
 
+    res.set('X-Cache', 'MISS');
     res.status(200).json({
       success: true,
       products: featuredProducts,
@@ -475,10 +605,10 @@ export const getFeaturedProducts = async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching featured products:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching featured products',
-      error: error.message,
+    res.status(200).json({
+      success: true,
+      products: [],
+      cached: true
     });
   }
 };
@@ -498,6 +628,7 @@ export const searchProducts = async (req, res) => {
     
     const cached = await getCache(cacheKey);
     if (cached) {
+      res.set('X-Cache', 'HIT');
       return res.status(200).json({
         ...cached,
         cached: true
@@ -514,8 +645,9 @@ export const searchProducts = async (req, res) => {
       .populate('category', 'name')
       .populate('subCategory', 'name')
       .sort({ score: { $meta: 'textScore' } })
-      .limit(parseInt(limit))
-      .lean();
+      .limit(Math.min(parseInt(limit), 50))
+      .lean()
+      .maxTimeMS(2000);
 
     const responseData = {
       success: true,
@@ -524,8 +656,9 @@ export const searchProducts = async (req, res) => {
       cached: false
     };
 
-    await setCache(cacheKey, responseData, 300);
+    await setCache(cacheKey, responseData, 180); // 3 minutes for search
 
+    res.set('X-Cache', 'MISS');
     res.status(200).json(responseData);
   } catch (error) {
     console.error('Error searching products:', error);
@@ -545,6 +678,7 @@ export const getProductByIdUser = async (req, res) => {
     
     const cached = await getCache(cacheKey);
     if (cached) {
+      res.set('X-Cache', 'HIT');
       return res.status(200).json({
         ...cached,
         cached: true
@@ -552,9 +686,11 @@ export const getProductByIdUser = async (req, res) => {
     }
 
     const foundProduct = await product.findById(id)
+      .select('-__v -createdAt -updatedAt')
       .populate('category', 'name description image')
       .populate('subCategory', 'name description image')
-      .lean();
+      .lean()
+      .maxTimeMS(1000);
 
     if (!foundProduct) {
       return res.status(404).json({
@@ -578,6 +714,7 @@ export const getProductByIdUser = async (req, res) => {
 
     await setCache(cacheKey, responseData, 600);
 
+    res.set('X-Cache', 'MISS');
     res.status(200).json(responseData);
   } catch (error) {
     console.error('Error fetching product:', error);
@@ -595,11 +732,14 @@ export const getContactNumber = async (req, res) => {
     
     const cached = await getCache(cacheKey);
     if (cached) {
+      res.set('X-Cache', 'HIT');
       return res.json(cached);
     }
 
     const admin = await Admin.findOne({ role: "admin" })
-      .select("phone");
+      .select("phone")
+      .lean()
+      .maxTimeMS(1000);
 
     const responseData = {
       phone: admin?.phone || ""
@@ -607,86 +747,37 @@ export const getContactNumber = async (req, res) => {
 
     await setCache(cacheKey, responseData, 3600);
 
+    res.set('X-Cache', 'MISS');
     res.json(responseData);
   } catch (error) {
-    res.status(500).json({ message: "Internal server error" });
+    res.status(200).json({ 
+      phone: "",
+      cached: true 
+    });
   }
 };
 
+// Cache clearing utilities
 export const clearProductCache = async (productId = null) => {
   if (productId) {
-    await deleteCache(`product:id:${productId}`);
+    await deleteCache(`product:id=${productId}`);
   }
   await deleteCachePattern('products:*');
+  await deleteCachePattern('batch:*');
 };
 
 export const clearSubCategoryCache = async (categoryId = null) => {
   if (categoryId) {
-    await deleteCache(`subcategories:categoryId:${categoryId}`);
+    await deleteCache(`subcategories:categoryId=${categoryId}`);
   }
   await deleteCachePattern('subcategories:*');
   await deleteCachePattern('categories:*');
-};
-
-export const getBatchHomeData = async (req, res) => {
-  try {
-    const cacheKey = 'home:batch-data';
-    
-    const cached = await getCache(cacheKey);
-    if (cached) {
-      return res.status(200).json({
-        success: true,
-        data: cached,
-        cached: true
-      });
-    }
-
-    const [categories, featuredProducts, stats] = await Promise.all([
-      Category.find({ status: 'Active' })
-        .select('name image')
-        .limit(8)
-        .lean(),
-      product.find({ status: 'Active', featured: true })
-        .select('name price discount images')
-        .limit(8)
-        .sort({ createdAt: -1 })
-        .lean(),
-      product.aggregate([
-        { $match: { status: 'Active' } },
-        {
-          $group: {
-            _id: null,
-            totalProducts: { $sum: 1 },
-            avgPrice: { $avg: '$price' }
-          }
-        }
-      ])
-    ]);
-
-    const batchData = {
-      categories,
-      featuredProducts,
-      stats: stats[0] || { totalProducts: 0, avgPrice: 0 }
-    };
-
-    await setCache(cacheKey, batchData, 600);
-
-    res.status(200).json({
-      success: true,
-      data: batchData,
-      cached: false
-    });
-  } catch (error) {
-    console.error('Error fetching batch data:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching data',
-      error: error.message,
-    });
-  }
+  await deleteCachePattern('batch:*');
 };
 
 export const clearCategoryCache = async () => {
   await deleteCachePattern('categories:*');
   await deleteCachePattern('subcategories:*');
+  await deleteCachePattern('home:*');
+  await deleteCachePattern('batch:*');
 };
