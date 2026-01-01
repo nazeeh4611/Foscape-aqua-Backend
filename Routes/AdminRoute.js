@@ -218,7 +218,7 @@ Adminrouter.get("/products", getAllProducts);
 Adminrouter.post("/add-product", propertyUpload.array("images", 10), createProduct);
 Adminrouter.get("/products/:id", getProductById);
 Adminrouter.put("/edit-product/:id", propertyUpload.array("images", 10), updateProduct);
-Adminrouter.delete("/products/:id", deleteProduct);
+Adminrouter.delete("/delete-product/:id", deleteProduct);
 Adminrouter.put("/products/:id/toggle-status", toggleProductStatus);
 Adminrouter.get("/categories-list", getCategories);
 Adminrouter.get("/subcategory/:categoryId", getSubCategories);

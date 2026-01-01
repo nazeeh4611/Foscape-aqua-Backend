@@ -169,6 +169,8 @@ export const updateProduct = async (req, res) => {
 // ==========================================
 export const deleteProduct = async (req, res) => {
   try {
+
+    console.log("isss")
     const product = await Product.findByIdAndDelete(req.params.id);
 
     if (!product)
